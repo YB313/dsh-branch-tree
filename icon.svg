@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Branch Tree">
+  <g fill="none" stroke="#247bbf" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 12v26a8 8 0 0 0 8 8h12" />
+    <path d="M44 46V28a6 6 0 0 0-6-6h-4" />
+  </g>
+  <g fill="#247bbf">
+    <circle cx="18" cy="12" r="6" />
+    <circle cx="18" cy="38" r="6" />
+    <circle cx="44" cy="46" r="6" />
+    <circle cx="34" cy="22" r="5" />
+  </g>
+</svg>

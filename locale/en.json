@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Branch Tree",
+    "description": "Treat a session as a folder: the master row becomes an expandable folder and its branches hang underneath as indented child rows, right in the left workspace column. Branches share the master requirements and md references — edit the md in the master and the branch reads the new version next time — and write into 制图/<master>/<branch>/."
+  }
+}

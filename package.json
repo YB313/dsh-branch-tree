@@ -1,0 +1,49 @@
+{
+  "name": "dsh-branch-tree",
+  "version": "1.1.12",
+  "description": "Treat a session as a folder: fork a conversation into branches that share the master's requirements and browse them as a tree in the left workspace column.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Yige Bao (YB313)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YB313/dsh-branch-tree.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "branch",
+    "session-tree",
+    "workspace"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-workspace-files"
+      ]
+    }
+  }
+}

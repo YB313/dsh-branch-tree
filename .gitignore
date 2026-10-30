@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# dependencies
+node_modules/
+
+# packaging artifacts
+*.tgz
+
+# archived historical builds (kept locally, not published)
+前置版本们/
+
+# logs / temp
+*.log
