@@ -140,111 +140,18 @@ ok(!failedOpen && failedCalls.length === 2, 'failed primary and fallback session
 ok(afterFailure[failedId] === 'unread' && openCallbacks.length === 1, 'failed open preserves unread status and skips acknowledgement callback');
 window.localStorage.removeItem(statusKey);
 ok(debug.taskStatusesEqual({ 'session-task-a1': 'unread' }, { 'session-task-a1': 'unread' }), 'status equality recognizes unchanged state');
-ok(plugin.inject.length === 1 && plugin.inject[0] === 'slots', 'plugin injects slots');
+ok(
+  plugin.inject.includes('slots') &&
+    plugin.inject.includes('remote') &&
+    plugin.inject.includes('remote.session') &&
+    plugin.inject.includes('remote.workspaceFiles'),
+  'plugin injects slots and remote APIs'
+);
 const clientInject = JSON.parse(fs.readFileSync(path.join(PKG, 'package.json'), 'utf8')).dsh.client.inject;
 ok(clientInject.includes('@deepseek-ai/dsh-client-ui-sidebar'), 'client manifest injects the sidebar slot provider');
 ok(clientInject.includes('@deepseek-ai/dsh-client-ui-primitives'), 'client manifest injects Harness native UI primitives');
 ok(clientInject.includes('@deepseek-ai/dsh-api-session-controller'), 'client manifest injects the session prompt/wait API');
 ok(clientInject.includes('@deepseek-ai/dsh-api-workspace-files'), 'client manifest injects the workspace-files stat API');
-
-const MERGE_SOURCE_ID = 'merge-source';
-const MERGE_TARGET_ID = 'merge-target';
-const mergeDate = new Date(2026, 9, 28, 12, 0, 0);
-ok(debug.localVersionDate(mergeDate) === '261028', 'merge filenames use the local YYMMDD date');
-ok(
-  debug.mergeOutputPath('/x/task', 'source', 'target', mergeDate, 0) === '/x/task/merge_source_target_261028ver.md',
-  'merge output names are unique, versioned Markdown files'
-);
-const branchPathStore = {
-  masters: [{ id: MERGE_SOURCE_ID, title: 'Master' }],
-  branches: [{ branchId: MERGE_TARGET_ID, parentId: MERGE_SOURCE_ID, masterId: MERGE_SOURCE_ID, dir: 'task/branch' }],
-};
-ok(
-  debug.markdownDirFor(branchPathStore, MERGE_TARGET_ID, '/x') === '/x/task/branch',
-  'merge reads a branch from its own bound Markdown directory'
-);
-
-const mergeRequests = [];
-let mergeStatCount = 0;
-const mergeCtx = {
-  remote: {
-    session: {
-      prompt: async (request) => { mergeRequests.push(request); return { accepted: true }; },
-      wait: async () => ({ reason: 'idle' }),
-    },
-    workspaceFiles: {
-      stat: async () => {
-        mergeStatCount += 1;
-        if (mergeStatCount === 1) {
-          const notFound = new Error('missing output file');
-          notFound.code = 'workspace-file/not-found';
-          throw notFound;
-        }
-        return { size: 64 };
-      },
-    },
-  },
-};
-const mergeResult = await debug.mergeMarkdownWithModel(mergeCtx, {
-  sourceId: MERGE_SOURCE_ID,
-  sourceTitle: 'Source task',
-  sourceDir: '/x/source',
-  targetId: MERGE_TARGET_ID,
-  targetTitle: 'Target task',
-  targetDir: '/x/target',
-  mode: 'branch',
-  outputPath: '/x/source/merge_Source_Target_261028ver.md',
-});
-ok(mergeResult.path === '/x/source/merge_Source_Target_261028ver.md' && mergeResult.size === 64, 'merge verifies a non-empty file after model completion');
-ok(mergeRequests.length === 1 && mergeRequests[0].sessionId === MERGE_SOURCE_ID && mergeRequests[0].mode === 'queue', 'merge prompt is queued in the dragged/source session');
-ok(
-  mergeRequests[0].content[0].text.includes('/x/source') &&
-    mergeRequests[0].content[0].text.includes('/x/target') &&
-    mergeRequests[0].content[0].text.includes('become a child branch'),
-  'branch-mode prompt includes both Markdown directories and branch intent'
-);
-
-let overwritePromptCount = 0;
-let existingMergeRefused = false;
-try {
-  await debug.mergeMarkdownWithModel({
-    remote: {
-      session: { prompt: async () => { overwritePromptCount += 1; }, wait: async () => ({ reason: 'idle' }) },
-      workspaceFiles: { stat: async () => ({ size: 12 }) },
-    },
-  }, {
-    sourceId: MERGE_SOURCE_ID,
-    outputPath: '/x/source/existing.md',
-    mode: 'same',
-  });
-} catch (error) {
-  existingMergeRefused = String(error && error.message).includes('refusing to overwrite');
-}
-ok(existingMergeRefused && overwritePromptCount === 0, 'merge refuses existing output before spending model tokens');
-
-let statFailurePromptCount = 0;
-let statFailurePropagated = false;
-try {
-  await debug.mergeMarkdownWithModel({
-    remote: {
-      session: { prompt: async () => { statFailurePromptCount += 1; }, wait: async () => ({ reason: 'idle' }) },
-      workspaceFiles: {
-        stat: async () => {
-          const denied = new Error('workspace service unavailable');
-          denied.code = 'workspace-file/permission-denied';
-          throw denied;
-        },
-      },
-    },
-  }, {
-    sourceId: MERGE_SOURCE_ID,
-    outputPath: '/x/source/merge.md',
-    mode: 'same',
-  });
-} catch (error) {
-  statFailurePropagated = String(error && error.message).includes('workspace service unavailable');
-}
-ok(statFailurePropagated && statFailurePromptCount === 0, 'merge propagates stat errors other than not-found without spending tokens');
 
 globalThis.document.documentElement = { lang: 'en-US' };
 ok(debug.lang() === 'en', 'Harness document language overrides the system locale');
@@ -522,8 +429,14 @@ const data = {
 const res = await debug.createBranch(ctx, { id: MASTER, title: '制图小助手' }, '熊的演化', data);
 ok(calls.fork.length === 1, 'fork called once');
 ok(calls.fork[0].sessionId === MASTER, 'fork uses the master session');
-ok(calls.fork[0].atSeq === 8, 'fork boundary came from the first-turn walk');
-ok(calls.fork[0].increaseTitle === false, 'fork keeps the title so we can rename');
+ok(
+  calls.fork[0].atSeq === 12,
+  'default branch forks verbatim at the master\'s last dialogue event, not at the end of turn 1 (got ' + calls.fork[0].atSeq + ')'
+);
+ok(
+  calls.fork[0].increaseTitle === undefined && calls.fork[0].sessionId === MASTER,
+  'fork sends only the fields the remote schema accepts'
+);
 ok(calls.rename[0] === '熊的演化', 'top-level branch title uses only the entered name');
 ok(
   calls.dirs.length === 3 &&
@@ -603,7 +516,7 @@ ok(
   wsReg && typeof wsReg.opts.priority === 'number' && wsReg.opts.priority < 0,
   'sidebar tree shadows the shipped slot by going below its priorities'
 );
-ok(debug.version === 'v45', 'version marker v45');
+ok(/^v[0-9]+$/.test(debug.version), 'version marker is a v-number (' + debug.version + ')');
 // The host can already hold several priorities; a collision must degrade to the
 // next candidate instead of killing the whole client module (which removes
 // every seat, leaving the user with the shipped UI and no branch tree).
@@ -813,7 +726,7 @@ ok(byClass(deep, 'dshbt-bubble').length === 0, 'no branch depth adds a non-activ
 // ------------------------------------------------ cascade menu interaction
 const cascadeTree = (path) => renderWithState(
   Browser({ wide: true, useWorkspaces: hookOf(snapshot) }),
-  { 12: true, 13: path }
+  { 10: true, 11: path }
 );
 const workspaceClosed = cascadeTree([]);
 const wsEntryClosed = byClass(workspaceClosed, 'dshbt-cascade-workspace-entry')[0];
@@ -823,7 +736,7 @@ ok(!wsEntryClosed.props.onMouseEnter && !wsTriggerClosed.props.onFocus, 'workspa
 const wsExpandStart = stateWrites.length;
 wsTriggerClosed.props.onClick();
 ok(
-  stateWrites.slice(wsExpandStart).some((write) => write && write.index === 13 && JSON.stringify(write.next) === JSON.stringify(['ws:ws-1'])),
+  stateWrites.slice(wsExpandStart).some((write) => write && write.index === 11 && JSON.stringify(write.next) === JSON.stringify(['ws:ws-1'])),
   'workspace click opens its cascade path'
 );
 const workspaceOpen = cascadeTree(['ws:ws-1']);
@@ -833,7 +746,7 @@ ok(!!wsEntry && !!wsTrigger && wsTrigger.props['aria-expanded'] === true, 'works
 const wsCollapseStart = stateWrites.length;
 wsTrigger.props.onClick();
 ok(
-  stateWrites.slice(wsCollapseStart).some((write) => write && write.index === 13 && JSON.stringify(write.next) === JSON.stringify([])),
+  stateWrites.slice(wsCollapseStart).some((write) => write && write.index === 11 && JSON.stringify(write.next) === JSON.stringify([])),
   'clicking an expanded workspace collapses its path'
 );
 const masterTrigger = byClass(workspaceOpen, 'dshbt-cascade-trigger').find((node) => textOf(node) === '制图小助手');
@@ -842,13 +755,13 @@ ok(!masterTrigger.props.onMouseEnter && !masterTrigger.props.onFocus, 'session b
 const masterExpandStart = stateWrites.length;
 masterTrigger.props.onClick();
 ok(
-  stateWrites.slice(masterExpandStart).some((write) => write && write.index === 13 && JSON.stringify(write.next) === JSON.stringify(['ws:ws-1', 'session:' + MASTER])),
+  stateWrites.slice(masterExpandStart).some((write) => write && write.index === 11 && JSON.stringify(write.next) === JSON.stringify(['ws:ws-1', 'session:' + MASTER])),
   'master-session click appends to the existing workspace path'
 );
 const escapeStart = stateWrites.length;
 byClass(workspaceOpen, 'dshbt-menu-ws')[0].props.onKeyDown({ key: 'Escape' });
 ok(
-  stateWrites.slice(escapeStart).some((write) => write && write.index === 13 && JSON.stringify(write.next) === JSON.stringify([])),
+  stateWrites.slice(escapeStart).some((write) => write && write.index === 11 && JSON.stringify(write.next) === JSON.stringify([])),
   'Escape clears the cascade path to an empty array'
 );
 ok(
@@ -868,7 +781,7 @@ const nestedPathStart = stateWrites.length;
 const openBeforeNestedPath = calls.opened.length;
 topTrigger.props.onClick();
 ok(
-  stateWrites.slice(nestedPathStart).some((write) => write && write.index === 13 && JSON.stringify(write.next) === JSON.stringify(['ws:ws-1', 'session:' + MASTER, 'session:' + top.branchId])) && calls.opened.length === openBeforeNestedPath,
+  stateWrites.slice(nestedPathStart).some((write) => write && write.index === 11 && JSON.stringify(write.next) === JSON.stringify(['ws:ws-1', 'session:' + MASTER, 'session:' + top.branchId])) && calls.opened.length === openBeforeNestedPath,
   'branch click appends its full ancestor path without opening the branch session'
 );
 const nestedMenu = cascadeTree(['ws:ws-1', 'session:' + MASTER, 'session:' + top.branchId]);
@@ -885,18 +798,9 @@ ok(
   'deepest leaf click opens its exact session id'
 );
 
-const oldPrompt = window.prompt;
-window.prompt = () => 'PhD Dissertation renamed';
 const renameTree = cascadeTree([]);
 const renameButton = byClass(renameTree, 'dshbt-icon-btn').find((node) => node.props.title === '重命名');
-ok(!!renameButton, 'workspace cascade exposes a rename action');
-renameButton.props.onClick({ stopPropagation() {} });
-await Promise.resolve();
-window.prompt = oldPrompt;
-ok(
-  calls.workspaceRenames.some((entry) => entry[0] === 'ws-1' && entry[1] === 'PhD Dissertation renamed'),
-  'workspace rename calls the host service with workspace id and title'
-);
+ok(!renameButton, 'workspace cascade does not expose a rename action');
 
 // A titleless session placeholder is seeded by the workspace itself, so the
 // sessions snapshot must still be merged in: this is what used to be skipped.
@@ -1053,10 +957,10 @@ if (sourceRow && targetRow) {
   targetRow.props.onDragOver(evt());
   targetRow.props.onDrop(evt());
 }
-ok(debug.loadStore().branches.length === 0, 'dragging a session onto another does not change hierarchy before choice');
+ok(debug.loadStore().branches.length === 0, 'plain drag does not change hierarchy; nesting requires Alt');
 ok(
-  stateWrites.slice(writesBeforeDrop).some((write) => write && write.next && write.next.sourceId === MASTER && write.next.targetId === OTHER),
-  'dragging a session onto another opens the merge-mode chooser'
+  !stateWrites.slice(writesBeforeDrop).some((write) => write && write.next && write.next.sourceId === MASTER && write.next.targetId === OTHER),
+  'plain drag does not invoke or prompt a merge action'
 );
 
 console.log(process.exitCode ? '\nSMOKE FAILED' : '\nSMOKE OK (' + log.length + ' checks)');
@@ -1099,5 +1003,397 @@ ok(
   'workspace sessions sort by latest update descending'
 );
 
+// ------------------------------------------------- inherited memory mode
+// "Inherit everything, compressed": the branch must fork at the master's LAST
+// event (not the end of turn 1), get a digest of the whole master, and receive
+// that digest as its own seed so it never reads the master again.
+// An assistant turn as DSH actually stores it: the parts sit one level down,
+// under `data.message.content`, with the model/provider metadata beside them.
+// Reading `data.content` alone is how every assistant reply got lost.
+function assistant(seq, text, turn) {
+  return {
+    type: 'event',
+    event: {
+      type: 'assistant/message',
+      seq,
+      data: {
+        turn: turn || 1,
+        step: 1,
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text }],
+          source: { kind: 'model', provider: 'p', model: 'm' },
+        },
+      },
+    },
+  };
+}
+// A host-injected block: same `user/message` type, different kind. These are
+// another session's runtime policy and skill catalog, never a user turn.
+function hostBlock(seq, kind, text) {
+  return {
+    type: 'event',
+    event: {
+      type: 'user/message',
+      seq,
+      data: { content: [{ type: 'text', text }], source: { kind }, role: 'user' },
+    },
+  };
+}
+function turnEnd(seq, turn) {
+  return { type: 'event', event: { type: 'turn/end', seq, data: { turn, reason: 'completed' } } };
+}
+
+function makeInheritSource() {
+  let entries = [];
+  const state = { get entries() { return entries; }, set entries(v) { entries = v; }, hasMore: true, revision: 0 };
+  // First page: seq 20..31, two later user turns (23, 27) so the old
+  // first-turn walk would stop at 22.
+  state.entries.push({
+    type: 'event',
+    event: {
+      type: 'user/message',
+      seq: 20,
+      data: { content: [{ type: 'text', text: '第一个需求：做分叉插件' }], source: { kind: 'user' } },
+    },
+  });
+  for (let seq = 21; seq <= 31; seq += 1) {
+    if (seq === 24 || seq === 25) {
+      state.entries.push(
+        hostBlock(
+          seq,
+          seq === 24 ? 'runtime-context' : 'skill-catalog',
+          seq === 24 ? 'Current runtime context. 沙箱 policy 与工作区路径。' : '<system-reminder> 技能目录 </system-reminder>'
+        )
+      );
+      continue;
+    }
+    if (seq === 23 || seq === 27) {
+      state.entries.push({
+        type: 'event',
+        event: {
+          type: 'user/message',
+          seq,
+          data: {
+            content: [{ type: 'text', text: seq === 23 ? '第三个需求：压缩继承做成可选项' : '第四个需求：分支独立跑' }],
+            source: { kind: 'user' },
+          },
+        },
+      });
+      continue;
+    }
+    // The host only forks a completed-turn prefix (every turn/end), and the
+    // plugin now resolves to exactly that seq, so the fixture carries a real
+    // turn/end instead of a wall of assistant replies (seq 28).
+    // Two completed turns: seq 22 closes turn 1 (the "opening only" cut) and
+    // seq 28 closes turn 2 (the newest prefix the host will copy).
+    state.entries.push(seq === 22 ? turnEnd(seq, 1) : seq === 28 ? turnEnd(seq, 2) : assistant(seq, '回复 ' + seq));
+  }
+  const session = {
+    loadOlder() {
+      const older = [];
+      for (let seq = 1; seq <= 19; seq += 1) {
+        older.push({
+          type: 'event',
+          event: {
+            type: seq % 2 === 1 ? 'user/message' : 'assistant/message',
+            seq,
+            data: { content: [{ type: 'text', text: '旧事件 ' + seq }] },
+          },
+        });
+      }
+      state.entries = older.concat(state.entries);
+      state.hasMore = false;
+      state.revision += 1;
+    },
+    rename() {},
+  };
+  return { session, source: { value: state } };
+}
+
+{
+  const { session: isSession, source: isSource } = makeInheritSource();
+  const isRef = { ready: Promise.resolve(), binding: { session: isSession, eventSource: isSource }, release() {} };
+  const ib = await debug.readInheritBoundary(isRef);
+  ok(
+    ib.atSeq === 31,
+    'inherit boundary keeps the last message when it is inside the completed turn (got ' + ib.atSeq + ')'
+  );
+  ok(ib.turns === 13, 'inherit boundary counts only the real user turns, not injected blocks (got ' + ib.turns + ')');
+  ok(ib.degraded === false, 'inherit boundary is not degraded once a user turn exists');
+
+  // The mechanical digest must cover the whole prefix, not stop at turn 1.
+  const all = [];
+  for (let seq = 1; seq <= 31; seq += 1) {
+    all.push({
+      event: {
+        type: seq % 2 === 1 ? 'user/message' : 'assistant/message',
+        seq,
+        data: { content: [{ type: 'text', text: '事件内容 ' + seq }] },
+      },
+    });
+  }
+  const md = debug.mechanicalDigest(all, 31);
+  ok(md.indexOf('事件内容 31') >= 0 && md.indexOf('事件内容 1') >= 0, 'mechanical digest keeps both the opening and the latest turn');
+
+  // Host-injected blocks (runtime context, skill catalog, time) must never be
+  // mistaken for something the user said.
+  const seeded = all.concat([
+    { event: { type: 'user/message', seq: 32, data: { content: [{ type: 'text', text: 'Current runtime context. INJECTED-RUNTIME' }], source: { kind: 'runtime-context' } } } },
+    { event: { type: 'user/message', seq: 33, data: { content: [{ type: 'text', text: '<!-- dsh-runtime:seed --> INJECTED-MARKER' }] } } },
+    { event: { type: 'user/message', seq: 34, data: { content: [{ type: 'text', text: '[记忆定位 — 读法] INJECTED-MEMORY' }] } } },
+  ]);
+  const seamd = debug.mechanicalDigest(seeded, 34);
+  ok(
+    seamd.indexOf('INJECTED-RUNTIME') < 0 && seamd.indexOf('INJECTED-MARKER') < 0 && seamd.indexOf('INJECTED-MEMORY') < 0,
+    'mechanical digest skips host-injected blocks'
+  );
+  ok(debug.isSeedUserEntry(seeded[31]) && debug.isSeedUserEntry(seeded[32]) && debug.isSeedUserEntry(seeded[33]), 'isSeedUserEntry flags every injected block shape');
+  ok(!debug.isSeedUserEntry(seeded[0]), 'isSeedUserEntry leaves real user turns alone');
+  ok(debug.seedBlockHeaders.length > 0, 'seed block headers are exposed for the matcher');
+
+  // A master whose real messages are all user turns and no assistant reply yet
+  // still has to cut somewhere sensible.
+  const onlyUser = {
+    value: {
+      entries: [
+        {
+          type: 'event',
+          event: { type: 'user/message', seq: 1, data: { content: [{ type: 'text', text: '第一句需求' }], source: { kind: 'user' } } },
+        },
+        hostBlock(2, 'runtime-context', 'Current runtime context. 无关块'),
+        {
+          type: 'event',
+          event: { type: 'user/message', seq: 3, data: { content: [{ type: 'text', text: '第二句需求' }], source: { kind: 'user' } } },
+        },
+      ],
+      hasMore: false,
+    },
+  };
+  onlyUser.session = { loadOlder() {}, async rename(t) { return { title: t, seq: 1 }; } };
+  const ouRef = { ready: Promise.resolve(), binding: { session: onlyUser.session, eventSource: { value: onlyUser.value } }, release() {} };
+  const oub = await debug.readInheritBoundary(ouRef);
+  ok(oub.atSeq === 3, 'a master with no assistant reply cuts at its last user message (got ' + oub.atSeq + ')');
+  ok(oub.turns === 2, 'injected blocks do not inflate the turn count (got ' + oub.turns + ')');
+  ok(oub.degraded === false, 'a user-only master is not degraded');
+  ok(md.length <= 12500, 'mechanical digest stays inside its character budget (got ' + md.length + ')');
+  ok(debug.mechanicalDigest(all, 5).indexOf('事件内容 9') < 0, 'mechanical digest respects the fork seq');
+
+  const prompt = debug.compressionPrompt('制图小助手', 31, 9, md);
+  ok(prompt.indexOf('制图小助手') >= 0 && prompt.indexOf('第 31 个事件') >= 0, 'compression prompt names the master and the fork event');
+  ok(/## 任务目标/.test(prompt) && /## 重要锚点/.test(prompt), 'compression prompt demands the resume-ready sections');
+
+  const seed = debug.seedText({ sourceTitle: '制图小助手', atSeq: 31 }, '## 任务目标\n做插件');
+  ok(seed.indexOf('dsh-branch-tree:seed') >= 0 && seed.indexOf('atSeq=31') >= 0, 'seed carries a machine-readable branch marker');
+  ok(seed.indexOf('## 任务目标') >= 0, 'seed embeds the digest body');
+
+  // clip keeps head and tail, and messageText reads the text parts.
+  const long = 'A'.repeat(500) + 'B'.repeat(500);
+  const clipped = debug.clip(long, 100);
+  ok(clipped.length < long.length && clipped.indexOf('AAAA') === 0 && clipped.indexOf('BBBB') > 0, 'clip keeps the head and the tail');
+  ok(
+    debug.messageText({ event: { data: { content: [{ type: 'text', text: 'x' }, { type: 'text', text: 'y' }] } } }) === 'x\ny',
+    'messageText joins the text parts of a message'
+  );
+}
+
+// End-to-end: default draft mode is inherit; the prompt/wait round-trip writes
+// the digest into the child and the stored entry records the digest source.
+{
+  const { session: e2eSession, source: e2eSource } = makeInheritSource();
+  const e2e = { fork: [], prompt: [], wait: [], rename: [], dirs: [] };
+  const e2eSessions = {
+    retain() {
+      return {
+        ready: Promise.resolve(),
+        binding: {
+          session: Object.assign({}, e2eSession, {
+            async rename(title) {
+              e2e.rename.push(title);
+            },
+          }),
+          eventSource: e2eSource,
+        },
+        release() {},
+      };
+    },
+    async fork(opts) {
+      e2e.fork.push(opts);
+      return 'session-inherit-child';
+    },
+    async create() {
+      return 'session-scratch-digest';
+    },
+    async archiveSession() {},
+    async prompt(options) {
+      e2e.prompt.push(options);
+      return { accepted: true };
+    },
+    async wait(options) {
+      e2e.wait.push(options);
+      return { ok: true };
+    },
+  };
+  const e2eUi = {
+    async createDirectory(p, n) {
+      e2e.dirs.push([p, n]);
+      return p + '/' + n;
+    },
+    openSession() {},
+  };
+  const e2eCtx = {
+    get(name) {
+      if (name === 'sessions') return e2eSessions;
+      if (name === 'uiWorkspace') return e2eUi;
+      if (name === 'workspaces') return { rename: async () => {} };
+      return undefined;
+    },
+  };
+  debug.resetStore();
+  const e2eData = { workspaces: extracted.workspaces, sessions: extracted.sessions };
+  const e2eEntry = await debug.createBranch(
+    e2eCtx,
+    { id: MASTER, title: '制图小助手' },
+    '压缩继承分支',
+    e2eData,
+    { inheritMode: 'inherit' }
+  );
+  ok(
+    e2e.fork.length === 1 && e2e.fork[0].atSeq === 0,
+    'inherit fork starts empty so no raw history travels (got ' + (e2e.fork[0] || {}).atSeq + ')'
+  );
+  ok(e2eEntry.inheritMode === 'inherit', 'stored entry records the compressed mode');
+  ok(!e2e.prompt.some((p) => p.sessionId === MASTER), 'the master is never prompted, so its own conversation stays clean');
+  const compressPrompt = e2e.prompt.find((p) => p.sessionId === 'session-scratch-digest');
+  ok(
+    !!compressPrompt && compressPrompt.mode === 'queue',
+    'compression runs in a scratch session (got ' + ((compressPrompt || {}).mode || 'none') + ')'
+  );
+  ok(
+    !!compressPrompt && /## 重要锚点/.test(compressPrompt.content[0].text),
+    'the scratch session is asked for the resume-ready digest'
+  );
+  const seedPrompt = e2e.prompt.find((p) => p.sessionId === 'session-inherit-child');
+  ok(!!seedPrompt && /dsh-branch-tree:seed/.test(seedPrompt.content[0].text), 'the child receives the digest as its seed');
+  ok(
+    seedPrompt &&
+      seedPrompt.content[0].text.indexOf('旧事件 1') >= 0 &&
+      seedPrompt.content[0].text.indexOf('已就绪') >= 0,
+    'the seed carries the whole master and asks for a one-line ack'
+  );
+  ok(
+    !/旧事件 3\n【用户】旧事件 3/.test(seedPrompt.content[0].text),
+    'the seed does not double events reloaded by loadOlder'
+  );
+  ok(e2eEntry.digestSource === 'mechanical', 'a missing model answer falls back to the mechanical digest');
+  ok(typeof e2eEntry.digestChars === 'number' && e2eEntry.digestChars > 0, 'stored entry records the digest size');
+  ok(
+    debug.loadStore().branches.length === 1 && debug.loadStore().branches[0].inheritMode === 'inherit',
+    'the branch is persisted with its compressed mode'
+  );
+}
+
+// When the model does answer with a proper digest, the seed must carry that
+// digest (not the mechanical transcript) and the entry must say "model".
+{
+  const { session: mSession, source: mSource } = makeInheritSource();
+  const m = { prompt: [] };
+  const modelSessions = {
+    retain() {
+      return {
+        ready: Promise.resolve(),
+        binding: {
+          session: Object.assign({}, mSession, { loadOlder: mSession.loadOlder, rename() {} }),
+          eventSource: mSource,
+        },
+        release() {},
+      };
+    },
+    async fork() {
+      return 'session-model-child';
+    },
+    async create() {
+      return 'session-model-scratch';
+    },
+    async prompt(options) {
+      m.prompt.push(options);
+      return { accepted: true };
+    },
+    async wait() {
+      mSource.value.entries.push({
+        type: 'event',
+        event: {
+          type: 'assistant/message',
+          seq: 32,
+          data: { content: [{ type: 'text', text: '## 任务目标\n做分叉插件，分支继承压缩记忆并独立续跑。\n这一段模拟模型真正写出的压缩记忆：它把主会话的目标、约束与已完成项压成要点，交棒给分支继续跑，而不是把原始对话整段搬过去。分支只读这一份摘要就要能直接开工，因此摘要里必须写清楚输出目录约定、命名规则与当前进度，并且明确指出哪些事还没做。\n## 重要锚点\n制图/<master>/<branch> 输出目录约定。' }] },
+        },
+      });
+      return { ok: true };
+    },
+  };
+  const modelCtx = {
+    get(name) {
+      if (name === 'sessions') return modelSessions;
+      if (name === 'uiWorkspace') return { async createDirectory(p, n) { return p + '/' + n; }, openSession() {} };
+      if (name === 'workspaces') return { rename: async () => {} };
+      return undefined;
+    },
+  };
+  debug.resetStore();
+  const modelEntry = await debug.createBranch(
+    modelCtx,
+    { id: MASTER, title: '制图小助手' },
+    '模型摘要分支',
+    { workspaces: extracted.workspaces, sessions: extracted.sessions },
+    { inheritMode: 'inherit' }
+  );
+  const modelSeed = m.prompt.find((p) => p.sessionId === 'session-model-child');
+  ok(modelEntry.digestSource === 'model', 'a proper model answer is used as the digest (got ' + modelEntry.digestSource + ')');
+  ok(!!modelSeed && modelSeed.content[0].text.indexOf('做分叉插件，分支继承压缩记忆') >= 0, 'the seed carries the model digest');
+  ok(!!modelSeed && modelSeed.content[0].text.indexOf('旧事件 1') < 0, 'the model digest replaces the raw transcript');
+}
+
+// The old "opening only" mode must still fork at the end of turn 1.
+{
+  const { session: oldSession, source: oldSource } = makeInheritSource();
+  const oldCalls = { fork: [] };
+  const oldSessions = {
+    retain() {
+      return {
+        ready: Promise.resolve(),
+        binding: {
+          session: Object.assign({}, oldSession, { rename: async () => {} }),
+          eventSource: oldSource,
+        },
+        release() {},
+      };
+    },
+    async fork(opts) {
+      oldCalls.fork.push(opts);
+      return 'session-opening-child';
+    },
+    async prompt() {
+      throw new Error('opening mode must not compress');
+    },
+  };
+  const oldCtx = {
+    get(name) {
+      if (name === 'sessions') return oldSessions;
+      if (name === 'uiWorkspace') return { async createDirectory(p, n) { return p + '/' + n; }, openSession() {} };
+      if (name === 'workspaces') return { rename: async () => {} };
+      return undefined;
+    },
+  };
+  debug.resetStore();
+  const oldEntry = await debug.createBranch(
+    oldCtx,
+    { id: MASTER, title: '制图小助手' },
+    '只继承开头',
+    { workspaces: extracted.workspaces, sessions: extracted.sessions },
+    { inheritMode: 'opening' }
+  );
+  ok(oldCalls.fork.length === 1 && oldCalls.fork[0].atSeq === 22, 'opening mode still cuts at the end of the first turn (got ' + oldCalls.fork[0].atSeq + ')');
+  ok(oldEntry.inheritMode === 'opening', 'opening mode records itself on the entry');
+}
 console.log(log.join('\n'));
 console.log(process.exitCode ? '\nSMOKE FAILED' : '\nSMOKE OK (' + log.length + ' checks)');

@@ -18,7 +18,7 @@ window.__ModuleLoader__.load({
   id: 'dsh-branch-tree',
   factory(require) {
     const React = require('react');
-    const { IconFolderOpenRegular, IconFolderCloseRegular } = require('@deepseek-ai/dsh-client-ui-primitives');
+    const { IconFolderOpenRegular, IconFolderCloseRegular, writeClipboard } = require('@deepseek-ai/dsh-client-ui-primitives');
     const h = React.createElement;
     const { useState, useEffect, useMemo, useCallback } = React;
 
@@ -52,22 +52,18 @@ window.__ModuleLoader__.load({
         bindExists: '已经是子工作区',
         bindUnavailable: '宿主没有开放 workspaces.create，无法建子工作区',
         bindFailed: '建子工作区失败：',
-        mergeTitle: '合并 Markdown',
-        mergeIntro: '会调用当前模型读取两边的 Markdown，并新建带日期的合并文件；原文件保留，不覆盖。此操作会消耗模型 tokens。',
-        mergeSameTask: '合并为同一任务',
-        mergeAsBranch: '拖拽项设为目标的分支',
-        mergeSameHint: '只生成合并文件，不改变会话树。',
-        mergeBranchHint: '先把目标 Markdown 融入拖拽项；成功后再将拖拽项挂到目标下面。',
-        mergeRunning: '模型正在合并 Markdown…',
-        mergeDone: '合并完成：',
-        mergeFailed: '合并失败，未改动会话树：',
-        mergeSource: '拖拽项',
-        mergeTarget: '目标项',
-        mergeDifferentWorkspace: '两项必须位于同一工作区，模型才能读取双方 Markdown。',
-        mergeSameFolder: '两项指向同一个 Markdown 目录；请先为它们绑定不同的文件夹。',
         taskRunning: '任务进行中',
         taskUnread: '任务已完成，尚未查看',
         branchCounts: '显示分支数',
+        untitledSession: '会话 ',
+        digestModel: '模型摘要',
+        digestMechanical: '机械摘要',
+        charsUnit: ' 字',
+        wsRenamed: '工作区已重命名',
+        wsRenameUnavailable: '工作区重命名服务不可用',
+        wsRenameFailed: '重命名失败：',
+        allChats: '全部对话',
+        noChats: '暂无对话',
       },
       en: {
         nested: 'Moved under that folder',
@@ -80,22 +76,18 @@ window.__ModuleLoader__.load({
         bindExists: 'Already a sub-workspace',
         bindUnavailable: 'workspaces.create is not exposed by the host',
         bindFailed: 'Could not create the sub-workspace: ',
-        mergeTitle: 'Merge Markdown',
-        mergeIntro: 'The current model will read Markdown from both lists and create a dated merged file. Originals stay untouched. This uses model tokens.',
-        mergeSameTask: 'Merge into one task',
-        mergeAsBranch: 'Make dragged item a branch of target',
-        mergeSameHint: 'Create the merged file only; keep the session tree unchanged.',
-        mergeBranchHint: 'Merge target Markdown into the dragged item first; nest it under the target only after success.',
-        mergeRunning: 'Merging Markdown with the model…',
-        mergeDone: 'Merge complete: ',
-        mergeFailed: 'Merge failed; session tree unchanged: ',
-        mergeSource: 'Dragged item',
-        mergeTarget: 'Target item',
-        mergeDifferentWorkspace: 'Both items must be in the same workspace so the model can read both Markdown sets.',
-        mergeSameFolder: 'Both items resolve to the same Markdown directory; bind them to different folders first.',
         taskRunning: 'Task in progress',
         taskUnread: 'Task completed, unread',
         branchCounts: 'Show branch counts',
+        untitledSession: 'Session ',
+        digestModel: 'model digest',
+        digestMechanical: 'mechanical digest',
+        charsUnit: ' chars',
+        wsRenamed: 'Workspace renamed',
+        wsRenameUnavailable: 'Workspace rename service unavailable',
+        wsRenameFailed: 'Rename failed: ',
+        allChats: 'All conversations',
+        noChats: 'No conversations yet',
       },
     };
     const DICT = {
@@ -103,7 +95,7 @@ window.__ModuleLoader__.load({
         panelLabel: '分支树',
         title: '分支树',
         subtitle:
-          '母会话是文件夹，分支是挂在下面的子项。分支只继承母会话开头的作图要求与 md 参考，看不到母会话后来的作图对话；md 文件共享，母会话改了 md，分支下次读取即生效。',
+          '母会话是文件夹，分支是挂在下面的子项。继承方式三种：全景继承（原样复制母会话到此为止的全部对话）、压缩继承（压成一份摘要带过去，分支独立续跑）、开头继承（只带第一条需求）。md 参考共享，母会话改了 md，分支下次读取即生效。',
         addToSession: '＋ 派生分支…',
         namePlaceholder: '分支名称，例如 熊的演化',
         create: '创建',
@@ -115,6 +107,9 @@ window.__ModuleLoader__.load({
         rename: '重命名',
         archive: '归档',
         archiveWs: '归档此工作区（需确认）',
+        unarchiveWs: '取消归档此工作区',
+        unarchiveWsConfirm: '把这个工作区里所有被归档的会话取消归档？',
+        wsUnarchived: '已取消归档',
         archiveWsConfirm: '把这个工作区的所有会话归档并隐藏这个分组？',
         archived: '已归档',
         archivedHeader: '已归档',
@@ -146,12 +141,27 @@ window.__ModuleLoader__.load({
         restore: '恢复原生左栏',
         takeoverOn: '接管左栏（实验）',
         takeoverOff: '恢复原生左栏',
+        modeLabel: '继承方式',
+        modeFull: '全景继承',
+        modeFullHint: '原样复制母会话到此为止的全部对话，分支接着往下干（默认）',
+        modeOpening: '开头继承',
+        modeOpeningHint: '只继承母会话第一条需求，看不到后续对话（旧行为）',
+        modeInherit: '压缩继承',
+        modeInheritHint: '把母会话到此为止的全部记忆压成摘要带过去，分支独立续跑',
+        compressing: '正在压缩母会话记忆…',
+        compressTimeout: '压缩超时：模型没在时限内写出摘要，已改用机械摘要。',
+        compressFallback: '压缩失败，已改用机械摘要：',
+        inherited: '已继承压缩记忆',
+        emptyFork: '⚠ 分支没能继承到母会话内容（宿主只复制了 0 条事件）。',
+        inheritFrom: '继承自',
+        seamNote: '以下是本会话分支点之前的压缩记忆，分支从此处独立续跑。',
+        nodesc: '（无描述）',
       },
       en: {
         panelLabel: 'Branches',
         title: 'Branches',
         subtitle:
-          'A master session is a folder; its branches hang underneath. A branch only inherits the master opening requirements and md references, never the later chatter. md files are shared: edit them in the master and the branch sees the new version on its next read.',
+          'A master session is a folder; its branches hang underneath. Three ways to inherit: full copy (the master up to now, verbatim), summary (one digest, then the branch runs on its own), opening only (just the first request). md files stay shared: edit them in the master and the branch sees the new version on its next read.',
         addToSession: '＋ New branch…',
         namePlaceholder: 'Branch name, e.g. bear evolution',
         create: 'Create',
@@ -163,6 +173,9 @@ window.__ModuleLoader__.load({
         rename: 'Rename',
         archive: 'Archive',
         archiveWs: 'Archive this workspace (asks first)',
+        unarchiveWs: 'Unarchive this workspace',
+        unarchiveWsConfirm: 'Unarchive every archived session in this workspace?',
+        wsUnarchived: 'Unarchived',
         archiveWsConfirm: 'Archive every session in this workspace and hide the group?',
         archived: 'Archived',
         archivedHeader: 'Archived',
@@ -194,6 +207,21 @@ window.__ModuleLoader__.load({
         restore: 'Restore the native sidebar',
         takeoverOn: 'Draw the tree in the sidebar (beta)',
         takeoverOff: 'Restore the native sidebar',
+        modeLabel: 'Inherit',
+        modeFull: 'Full copy',
+        modeFullHint: 'Copy the whole conversation up to here, verbatim; the branch carries on from it (default)',
+        modeOpening: 'Opening only',
+        modeOpeningHint: 'Inherit just the first requirement; later chatter stays private (old behaviour)',
+        modeInherit: 'Summary',
+        modeInheritHint: 'Compress all of the master up to this point and carry it over; the branch then runs alone',
+        compressing: 'Compressing the master memory…',
+        compressTimeout: 'Compression timed out; fell back to a mechanical digest.',
+        compressFallback: 'Compression failed, fell back to a mechanical digest: ',
+        inherited: 'Inherited compressed memory',
+        emptyFork: 'Warning: the branch inherited nothing — the host copied zero events.',
+        inheritFrom: 'Inherited from',
+        seamNote: 'Compressed memory of this session before the branch point. The branch runs on from here.',
+        nodesc: '(no description)',
       },
     };
     function lang() {
@@ -769,7 +797,7 @@ window.__ModuleLoader__.load({
       return '';
     }
     function sessionLabel(id) {
-      return '会话 ' + String(id || '').slice(-6);
+      return L('untitledSession') + String(id || '').slice(-6);
     }
     // v19: a compact age for archive rows; the exact date lives in the tooltip.
     function agoText(at) {
@@ -844,6 +872,7 @@ window.__ModuleLoader__.load({
     function extractSnapshot(snapshot) {
       const workspaces = [];
       const sessions = new Map();
+      const archivedIds = new Set();
       const seenWorkspace = new Set();
       const visited = new WeakSet();
       const noteSession = function (id, obj) {
@@ -895,6 +924,25 @@ window.__ModuleLoader__.load({
               arch.forEach(function (raw) {
                 if (!isSessionId(raw)) return;
                 const nid = normId(raw);
+                archivedIds.add(nid);
+                const rec = sessions.get(nid) || { id: nid };
+                rec.archived = true;
+                sessions.set(nid, rec);
+              });
+            }
+            // The host keeps one registry-GLOBAL archive set in the workspace
+            // snapshot (workspaceDomainState.archivedSessionIds). It is not a
+            // per-workspace list and it sits on the same record that carries the
+            // workspace order, so a workspace whose every session was archived
+            // still reports the whole set. Mirror every member onto its record.
+            const globalArch = Array.isArray(node.archivedSessionIds)
+              ? node.archivedSessionIds
+              : null;
+            if (globalArch) {
+              globalArch.forEach(function (raw) {
+                if (!isSessionId(raw)) return;
+                const nid = normId(raw);
+                archivedIds.add(nid);
                 const rec = sessions.get(nid) || { id: nid };
                 rec.archived = true;
                 sessions.set(nid, rec);
@@ -922,7 +970,7 @@ window.__ModuleLoader__.load({
           if (isSessionId(id) && !sessions.has(id)) sessions.set(id, { id: normId(id) });
         });
       });
-      return { workspaces: workspaces, sessions: sessions };
+      return { workspaces: workspaces, sessions: sessions, archivedIds: archivedIds };
     }
 
     // v6: the host's selector hooks ARE React hooks, so the number of calls
@@ -1090,9 +1138,17 @@ window.__ModuleLoader__.load({
         });
       }
       const activeId = findActiveSessionId([panelSnap, sessSnap, statusSnap, wsSnap]);
+      // Union the host archive sets of every snapshot that actually sees them.
+      const archivedIds = new Set(a.archivedIds);
+      [r, b, extractSnapshot(statusSnap), extractSnapshot(panelSnap)].forEach(function (part) {
+        part.archivedIds.forEach(function (id) {
+          archivedIds.add(id);
+        });
+      });
       return {
         workspaces: a.workspaces,
         sessions: a.sessions,
+        archivedIds: archivedIds,
         activeId: activeId,
         paths: collectPaths(wsSnap, 0, [], new WeakSet()).concat(
           collectPaths(sessSnap, 0, [], new WeakSet())
@@ -1122,6 +1178,86 @@ window.__ModuleLoader__.load({
     }
     function entriesOf(source) {
       return eventWindowOf(source) || { entries: [], hasMore: false };
+    }
+    function eventsOf(source) {
+      return entriesOf(source).entries.map(function (e) {
+        return e && e.event;
+      });
+    }
+    // The host's own default fork boundary (SessionCommandController#fork /
+    // latestCompletedPrefixBoundary in the DSH build): the last turn/end, then
+    // any standalone events written after it until the next turn begins.
+    // Reproducing it here matters because the host validates a supplied atSeq
+    // with source.events[boundary]?.seq !== boundary — the boundary has to be a
+    // real seq in the master log, not an index into a partially loaded page.
+    // A fork that copies nothing still "succeeds": the host happily seeds the
+    // child with whatever precedes the boundary, and the branch starts empty.
+    // Reading the child's inheritedEventCount back is the only cheap way to
+    // tell a real copy from an empty shell, so branches are checked right after
+    // the fork and retried without an explicit atSeq when they come back empty.
+    async function inheritedCountOf(sessions, childId, sourceId) {
+      const ref = sessions.retain(childId, { source: SOURCE });
+      try {
+        await ref.ready;
+        const binding = ref && ref.binding;
+        const sid = (binding && (binding.sessionId || (binding.session && binding.session.id))) || childId;
+        const list = [];
+        const visit = function (node) {
+          if (!node) return;
+          if (typeof node === 'string') return;
+          if (Array.isArray(node)) {
+            for (let i = 0; i < node.length; i += 1) visit(node[i]);
+            return;
+          }
+          if (typeof node !== 'object') return;
+          if (node.sessionId === sid || node.id === sid) list.push(node);
+          else if (node.compare && node.compare(sid) === 0) list.push(node);
+        };
+        try {
+          visit(sessions.list());
+        } catch (e0) {
+        }
+        const counts = [];
+        for (let i = 0; i < list.length; i += 1) {
+          const n = list[i].inheritedEventCount;
+          if (typeof n === 'number') counts.push(n);
+        }
+        const face = binding && binding.session;
+        if (!counts.length && face && typeof face.inheritedEventCount === 'number') {
+          counts.push(face.inheritedEventCount);
+        }
+        return counts.length ? Math.max.apply(null, counts) : undefined;
+      } catch (e) {
+        return undefined;
+      } finally {
+        releaseRef(ref);
+      }
+    }
+    const EMPTY_FORK_RETRIES = 2;
+    function completedTurnBoundary(events) {
+      let lastTurnEnd;
+      for (let i = events.length - 1; i >= 0; i -= 1) {
+        const ev = events[i];
+        if (ev && ev.type === 'turn/end' && typeof ev.seq === 'number') {
+          lastTurnEnd = ev;
+          break;
+        }
+      }
+      if (!lastTurnEnd) return undefined;
+      let boundary = lastTurnEnd.seq;
+      for (let i = 0; i < events.length; i += 1) {
+        const ev = events[i];
+        if (!ev || typeof ev.seq !== 'number' || ev.seq <= boundary) continue;
+        if (
+          ev.type === 'turn/start' ||
+          ev.type === 'agent/inbox/spliced' ||
+          (ev.type === 'user/message' && ev.surfaceOp === 'append')
+        ) {
+          break;
+        }
+        boundary = ev.seq;
+      }
+      return boundary;
     }
     function isConversationEvent(entry) {
       const type = String((entry && entry.event && entry.event.type) || '').toLowerCase();
@@ -1154,12 +1290,39 @@ window.__ModuleLoader__.load({
     function userMessageSeq(entry) {
       const ev = entry && entry.event;
       if (!ev) return undefined;
-      if (ev.type === 'user/message' || ev.type === 'user_message') return ev.seq;
-      return undefined;
+      if (ev.type !== 'user/message' && ev.type !== 'user_message') return undefined;
+      // The host logs its own injected blocks as `user/message` too — runtime
+      // context, the skill catalog, the time snapshot. Counting those as turns
+      // puts the "second user message" one seq after the real one, which drags
+      // the boundary back to the START of turn 1 (observed: atSeq 8 on a master
+      // whose turn 1 ran 4→19). Forking at a half-finished turn inherits
+      // nothing, so the branch arrives with an empty history.
+      const kind = (ev.data && ev.data.source && ev.data.source.kind) || (ev.source && ev.source.kind) || '';
+      if (kind && kind !== 'user') return undefined;
+      return ev.seq;
     }
-    // The boundary we fork at is the end of the master's FIRST turn: the largest
-    // seq below the SECOND user message. Everything after that is the master's
-    // own later conversation and must not reach a branch.
+    // The seq of the first completed turn's `turn/end`. This — not the start of
+    // the next user message — is the real end of the master's FIRST turn, and it
+    // is the only boundary the host will materialise a full prefix for.
+    function firstTurnEndSeq(entries) {
+      const ends = entries
+        .map(function (e) {
+          return e && e.event;
+        })
+        .filter(function (ev) {
+          return ev && ev.type === 'turn/end' && typeof ev.seq === 'number';
+        })
+        .map(function (ev) {
+          return ev.seq;
+        })
+        .sort(function (a, b) {
+          return a - b;
+        });
+      return ends.length ? ends[0] : undefined;
+    }
+    // The boundary we fork at is the end of the master's FIRST turn: its
+    // `turn/end` seq. Everything after that is the master's own later
+    // conversation and must not reach a branch.
     async function readForkBoundary(ref) {
       const binding = (ref && ref.binding) || {};
       const source = (ref && ref.eventSource) || binding.eventSource;
@@ -1167,12 +1330,14 @@ window.__ModuleLoader__.load({
       let entries = win.entries.slice();
       let guard = 0;
       const session = binding.session;
-      while (
-        entries.filter(userMessageSeq).length < 2 &&
-        guard < 160 &&
-        session &&
-        typeof session.loadOlder === 'function'
-      ) {
+      // Load older events until we can see the end of turn 1 — either a
+      // `turn/end` or a second *real* user message, whichever shows up first.
+      const enough = function () {
+        return (
+          firstTurnEndSeq(entries) !== undefined || entries.filter(userMessageSeq).length >= 2
+        );
+      };
+      while (!enough() && guard < 160 && session && typeof session.loadOlder === 'function') {
         guard += 1;
         const before = entries.length;
         try {
@@ -1184,6 +1349,12 @@ window.__ModuleLoader__.load({
         if (entries.length === before && guard > 3) break;
         await wait(30);
       }
+      const turnEnd = firstTurnEndSeq(entries);
+      if (turnEnd !== undefined) return { atSeq: turnEnd, degraded: false };
+      // Turn 1 never closed (still streaming, or abandoned): use the newest
+      // completed turn so the host has a prefix it will actually copy.
+      const open = completedTurnBoundary(eventsOf(source));
+      if (open !== undefined) return { atSeq: open, degraded: true };
       const seqs = entries
         .map(userMessageSeq)
         .filter(function (s) {
@@ -1340,111 +1511,211 @@ window.__ModuleLoader__.load({
       return undefined;
     }
 
-    function absoluteChild(root, relative) {
-      const base = String(root || '').replace(/[\\/]+$/, '');
-      const child = String(relative || '').replace(/^[\\/]+/, '');
-      return child ? base + '/' + child : base;
-    }
-
-    function markdownDirFor(store, id, workspacePath) {
-      const entry = entryOf(store, id);
-      const folder = folderOf(store, id);
-      const relative = (entry && entry.dir) || (folder && folder.dir) || '';
-      return absoluteChild(workspacePath, relative);
-    }
-
-    function localVersionDate(now) {
-      const d = now || new Date();
-      const yy = String(d.getFullYear()).slice(-2);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return yy + mm + dd;
-    }
-
-    function mergeOutputPath(sourceDir, sourceTitle, targetTitle, now, revision) {
-      const slug = sanitizeName('merge_' + (sourceTitle || 'source') + '_' + (targetTitle || 'target')) || 'merge';
-      const version = revision ? '_' + String(revision).padStart(2, '0') : '';
-      return absoluteChild(sourceDir, slug + version + '_' + localVersionDate(now) + 'ver.md');
-    }
-
-    async function workspaceStatOrMissing(files, sessionId, filePath) {
-      try {
-        return await files.stat(sessionId, filePath);
-      } catch (error) {
-        const code = error && (error.code || (error.details && error.details.code));
-        if (code === 'workspace-file/not-found') return null;
-        throw error;
-      }
-    }
-
-    async function availableMergeOutputPath(ctx, sessionId, sourceDir, sourceTitle, targetTitle) {
-      const files = remoteNamespace(ctx, 'workspaceFiles');
-      if (!files || typeof files.stat !== 'function') {
-        throw new Error('DSH workspace-files stat API is unavailable');
-      }
-      for (let revision = 0; revision < 100; revision += 1) {
-        const candidate = mergeOutputPath(sourceDir, sourceTitle, targetTitle, null, revision);
-        const existing = await workspaceStatOrMissing(files, sessionId, candidate);
-        if (!existing) return candidate;
-      }
-      throw new Error('Too many merged Markdown versions already exist for today');
-    }
-
     function remoteNamespace(ctx, name) {
       try {
         if (ctx && ctx.remote && ctx.remote[name]) return ctx.remote[name];
       } catch (e) {}
       const remote = service(ctx, 'remote');
       if (remote && remote[name]) return remote[name];
-      return service(ctx, name);
+      return service(ctx, name) || service(ctx, name + 's');
     }
 
-    async function mergeMarkdownWithModel(ctx, args) {
-      const sessions = remoteNamespace(ctx, 'session');
-      const files = remoteNamespace(ctx, 'workspaceFiles');
-      if (!sessions || typeof sessions.prompt !== 'function' || typeof sessions.wait !== 'function') {
-        throw new Error('DSH session prompt/wait API is unavailable');
+    // The remote session surface answers in a gateway envelope ({ok, value})
+    // while the in-process manager answers with the payload itself; both shapes
+    // reach the plugin depending on how the client is wired, so unwrap either.
+    function unwrapResult(res) {
+      if (res && typeof res === 'object' && typeof res.ok === 'boolean') {
+        if (!res.ok) throw res.error || new Error('DSH session request failed');
+        return res.value;
       }
-      if (!files || typeof files.stat !== 'function') {
-        throw new Error('DSH workspace-files stat API is unavailable');
-      }
-      const outputPath = args.outputPath;
-      const existing = await workspaceStatOrMissing(files, args.sourceId, outputPath);
-      if (existing) throw new Error('Output already exists; refusing to overwrite: ' + outputPath);
+      return res;
+    }
 
-      const branchMode = args.mode === 'branch';
-      const prompt = [
-        'Merge Markdown files for two DSH session lists. Use your available sandboxed file tools (read and write); do not use shell or edit/delete/overwrite any input.',
-        'Dragged/source list: ' + args.sourceTitle,
-        'Source Markdown directory: ' + args.sourceDir,
-        'Drop-target list: ' + args.targetTitle,
-        'Target Markdown directory: ' + args.targetDir,
-        branchMode
-          ? 'Intent: the dragged/source list will become a child branch of the target. Merge the target list Markdown into the dragged/source list documents, preserving source material and marking which facts came from which list.'
-          : 'Intent: combine both lists as one task. Create one coherent merged Markdown document that preserves useful material from both lists and clearly marks provenance where needed.',
-        'Read relevant *.md files from both specified directories (recursively, but do not leave these directories). Ignore previous merge_*.md outputs unless they add unique information. If the same file is present in both, deduplicate rather than repeating it.',
-        'Limit the merge to at most 20 input files and 100000 characters total. If the input exceeds either limit, stop without writing and explain which limit was reached.',
-        'Create exactly one new Markdown file at this path and never overwrite it: ' + outputPath,
-        'Do not modify, rename, or delete any source file. Preserve links, references, TODOs, dates, and code blocks. Do not invent facts; mark conflicts or unresolved differences explicitly.',
-        'After writing, read the new file back and verify it is non-empty. Reply with the exact output path and a concise summary.',
-      ].join('\n\n');
-      const requestId = 'dshbt-merge-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-      const accepted = await sessions.prompt({
-        requestId: requestId,
-        sessionId: args.sourceId,
-        mode: 'queue',
-        content: [{ type: 'text', text: prompt }],
-      });
-      if (accepted && accepted.accepted === false) throw new Error('DSH did not accept the merge prompt');
-      const result = await sessions.wait({ sessionId: args.sourceId, timeoutMs: 180000, maxMessages: 20 });
-      if (result && (result.reason === 'timeout' || result.reason === 'input-required')) {
-        throw new Error('Model did not finish the merge: ' + result.reason);
+    // The plugin can be handed the raw remote surface, the manager that wraps
+    // it, or a Cordis service that differs per build, so every call site picks
+    // the first candidate that actually implements the method it needs.
+    function sessionCandidates(ctx) {
+      const out = [];
+      const push = function (v) {
+        if (v && typeof v === "object" && out.indexOf(v) < 0) out.push(v);
+      };
+      try {
+        const remote = ctx && ctx.remote;
+        if (remote && remote.session) push(remote.session);
+      } catch (e) {}
+      push(remoteNamespace(ctx, 'session'));
+      push(service(ctx, 'sessions'));
+      return out;
+    }
+
+    async function promptSession(ctx, params) {
+      const list = sessionCandidates(ctx);
+      for (let i = 0; i < list.length; i += 1) {
+        if (typeof list[i].prompt !== "function") continue;
+        const value = unwrapResult(await list[i].prompt(params));
+        if (value && value.accepted === false) throw new Error('DSH did not accept the prompt');
+        return value;
       }
-      const written = await files.stat(args.sourceId, outputPath);
-      if (!written || (typeof written.size === 'number' && written.size <= 0)) {
-        throw new Error('The merged Markdown file is missing or empty: ' + outputPath);
+      throw new Error('DSH session prompt API is unavailable');
+    }
+
+    // The remote session surface has no wait() method: the only way to know a
+    // queued turn finished is to follow the session's own event stream until its
+    // turn/end. wait() is still used when a build happens to expose it.
+    async function waitForTurn(ctx, sessionId, afterSeq, timeoutMs) {
+      const list = sessionCandidates(ctx);
+      for (let i = 0; i < list.length; i += 1) {
+        if (typeof list[i].wait !== "function") continue;
+        const result = await list[i].wait({
+          sessionId: sessionId,
+          timeoutMs: timeoutMs,
+          maxMessages: 40,
+        });
+        if (result && (result.reason === "timeout" || result.reason === "input-required")) {
+          throw new Error('model did not finish: ' + result.reason);
+        }
+        return true;
       }
-      return { path: outputPath, size: written.size || null };
+      let streamer = null;
+      for (let i = 0; i < list.length; i += 1) {
+        if (typeof list[i].follow === "function") {
+          streamer = list[i];
+          break;
+        }
+      }
+      if (!streamer) {
+        throw new Error('DSH session follow API is unavailable');
+      }
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      let timedOut = false;
+      const timer = setTimeout(function () {
+        timedOut = true;
+        try {
+          if (controller) controller.abort();
+        } catch (e) {}
+      }, timeoutMs);
+      let answered = false;
+      try {
+        const stream = streamer.follow(
+          {
+            address: { kind: 'session', sessionId: sessionId },
+            assistantStream: true,
+          },
+          controller ? controller.signal : undefined
+        );
+        for await (const frame of stream) {
+          if (!frame || frame.type !== 'entry') continue;
+          const ev = frame.entry && frame.entry.event;
+          if (!ev || typeof ev.seq !== 'number' || ev.seq <= afterSeq) continue;
+          if (ev.type === 'assistant/message') answered = true;
+          if (answered && ev.type === 'turn/end') return true;
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+      if (timedOut) throw new Error('model did not finish: timeout');
+      if (!answered) throw new Error('model did not answer before the stream ended');
+      return true;
+    }
+
+    async function latestSeqOf(mgr, sessionId) {
+      if (!mgr || typeof mgr.retain !== 'function') return 0;
+      const ref = mgr.retain(sessionId, { source: SOURCE });
+      try {
+        if (ref && ref.ready && typeof ref.ready.then === 'function') {
+          try {
+            await ref.ready;
+          } catch (e) {}
+        }
+        const entries = await readWholeSession(ref);
+        return entries.reduce(function (m, e) {
+          const s = e && e.event && e.event.seq;
+          return typeof s === 'number' && s > m ? s : m;
+        }, 0);
+      } finally {
+        releaseRef(ref);
+      }
+    }
+
+    async function lastAssistantTextOf(mgr, sessionId) {
+      if (!mgr || typeof mgr.retain !== 'function') return '';
+      const ref = mgr.retain(sessionId, { source: SOURCE });
+      try {
+        if (ref && ref.ready && typeof ref.ready.then === 'function') {
+          try {
+            await ref.ready;
+          } catch (e) {}
+        }
+        const entries = await readWholeSession(ref);
+        for (let i = entries.length - 1; i >= 0; i -= 1) {
+          if (roleOf(entries[i]) !== 'assistant') continue;
+          const text = messageText(entries[i]).trim();
+          if (text) return text;
+        }
+        return '';
+      } finally {
+        releaseRef(ref);
+      }
+    }
+
+    async function openScratchSession(ctx, workspaceId) {
+      const mgr = service(ctx, 'sessions');
+      if (!mgr || typeof mgr.create !== 'function') {
+        throw new Error('DSH session create API is unavailable');
+      }
+      const id = await mgr.create(workspaceId ? { workspaceId: workspaceId } : {});
+      if (typeof id !== 'string' || !id) throw new Error('DSH session create returned no id');
+      return id;
+    }
+
+    function archiveQuietly(ctx, id) {
+      if (!id) return;
+      try {
+        const ws = service(ctx, 'workspaces');
+        if (ws && typeof ws.archiveSession === 'function') {
+          const p = ws.archiveSession(id, { stopActivity: true });
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+          return;
+        }
+      } catch (e) {}
+      try {
+        const ui = service(ctx, 'uiWorkspace');
+        if (ui && typeof ui.archiveSession === 'function') {
+          const p = ui.archiveSession(id);
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+        }
+      } catch (e) {}
+    }
+
+    function workspaceIdFor(data, id) {
+      const list = (data && data.workspaces) || [];
+      for (let i = 0; i < list.length; i += 1) {
+        const w = list[i];
+        if (w && Array.isArray(w.sessionIds) && w.sessionIds.indexOf(id) >= 0) return w.id;
+      }
+      return list[0] ? list[0].id : undefined;
+    }
+
+    // An empty branch: fork at seq 0 keeps the workspace association and the
+    // lineage; creating a plain session is the fallback when a build refuses a
+    // zero-length prefix.
+    function forkEmptySession(ctx, sessions, sourceId, workspaceId) {
+      return (async function () {
+        try {
+          const raw = await sessions.fork({ sessionId: sourceId, atSeq: 0 });
+          const value = unwrapResult(raw);
+          const id = value && typeof value === 'object' ? value.sessionId : value;
+          if (id) return String(id);
+        } catch (e) {}
+        return openScratchSession(ctx, workspaceId);
+      })();
+    }
+
+    function copyText(text) {
+      try {
+        const p = writeClipboard(String(text));
+        if (p && typeof p.catch === 'function') p.catch(function () {});
+      } catch (e) {}
     }
 
     function releaseRef(ref) {
@@ -1452,6 +1723,393 @@ window.__ModuleLoader__.load({
         if (ref && typeof ref.release === 'function') ref.release();
       } catch (e) {}
     }
+
+    // --------------------------------------------------- inherited memory mode
+    // DSH keeps no compaction artifact in a session log: compression in this
+    // setup happens outside DSH (a proxy rewrites each request), so a plain fork
+    // always copies raw history. Returning "A's compressed memory" therefore has
+    // to be manufactured here: read A up to the fork seq, condense it, then write
+    // the digest into the child as its own context seed. The child never reads A
+    // again, so later edits to A cannot reach it.
+    const INHERIT_DIGEST_CHARS = 12000;
+    const INHERIT_TURN_CHARS = 700;
+    const INHERIT_PROMPT_CHARS = 60000;
+    const INHERIT_TIMEOUT_MS = 240000;
+
+    function messageText(entry) {
+      const data = (entry && entry.event && entry.event.data) || {};
+      // An assistant turn stores its parts nested one level down, under
+      // `data.message.content`, with the model/provider metadata beside it.
+      // Reading only `data.content` therefore sees nothing on the assistant
+      // side and drops every reply from the transcript.
+      const content = Array.isArray(data.content)
+        ? data.content
+        : (data.message && data.message.content) || data.content;
+      if (typeof content === 'string') return content;
+      if (!Array.isArray(content)) return '';
+      return content
+        .map(function (part) {
+          if (!part || typeof part !== 'object') return '';
+          if (typeof part.text === 'string') return part.text;
+          if (typeof part.content === 'string') return part.content;
+          return '';
+        })
+        .filter(Boolean)
+        .join('\n');
+    }
+    function clip(text, limit) {
+      const s = String(text == null ? '' : text);
+      if (s.length <= limit) return s;
+      const head = s.slice(0, Math.ceil(limit * 0.7));
+      const tail = s.slice(s.length - Math.floor(limit * 0.25));
+      return head + '\n…[省略 ' + (s.length - head.length - tail.length) + ' 字]…\n' + tail;
+    }
+    function roleOf(entry) {
+      const type = String((entry && entry.event && entry.event.type) || '').toLowerCase();
+      if (/^user[/_-]message$/.test(type)) return 'user';
+      if (/^assistant[/_-](?:message|final|response)$/.test(type)) return 'assistant';
+      return '';
+    }
+    function isInternalSeed(text) {
+      return /<!--\s*dsh-branch-tree:seed/i.test(String(text || ''));
+    }
+    // Host-injected user blocks (runtime context, skill catalog, time snapshot,
+    // memory snapshot) share the `user/message` type with real turns. They must
+    // never be inherited: the branch would wake up parsing another session's
+    // sandbox policy, or re-reading a skill catalog for a task it does not have.
+    // `source.kind` is the host's own tag, so anything other than 'user' is an
+    // injected block; when the tag is missing fall back to the known headers.
+    const SEED_BLOCK_HEADERS = [
+      'Current runtime context',
+      'Current DSH file policy',
+      'Current DeepSeek Harness implementation checkout',
+      'Current DeepSeek Harness Web GUI URL',
+      '[记忆定位',
+      '[记忆系统',
+      '[规则 — 用户级硬性约束',
+    ];
+    function isSeedUserEntry(entry) {
+      const ev = entry && entry.event;
+      if (!ev || roleOf(entry) !== 'user') return false;
+      const kind = (ev.data && ev.data.source && ev.data.source.kind) || (ev.source && ev.source.kind) || '';
+      if (kind && kind !== 'user') return true;
+      const text = String(messageText(entry) || '').replace(/^\s+/, '');
+      if (!text) return false;
+      const head = text.slice(0, 160);
+      if (/^<!--\s*dsh-(?:runtime|seed|plugin)/i.test(head)) return true;
+      return SEED_BLOCK_HEADERS.some(function (marker) {
+        return head.indexOf(marker) >= 0;
+      });
+    }
+    function turnOf(entry) {
+      const data = (entry && entry.event && entry.event.data) || {};
+      return typeof data.turn === 'number' ? data.turn : null;
+    }
+
+    // Load every event the session has, not just the first page. `loadOlder`
+    // pulls the previous page, so loop until the window stops growing.
+    async function readWholeSession(ref) {
+      const binding = (ref && ref.binding) || {};
+      const source = (ref && ref.eventSource) || binding.eventSource;
+      const session = binding.session;
+      const entries = entriesOf(source).entries.slice();
+      let guard = 0;
+      while (guard < 400 && session && typeof session.loadOlder === 'function') {
+        guard += 1;
+        const before = entries.length;
+        try {
+          await session.loadOlder();
+        } catch (e) {
+          break;
+        }
+        const win = eventWindowOf(source);
+        const next = entriesOf(source).entries.slice();
+        // Dedupe by seq, not by identity: loadOlder can hand back the same
+        // event as a fresh object, and identity checks then double every line.
+        const seen = {};
+        for (let i = 0; i < entries.length; i += 1) {
+          const s = entries[i] && entries[i].event && entries[i].event.seq;
+          if (typeof s === 'number') seen[s] = true;
+        }
+        for (let i = 0; i < next.length; i += 1) {
+          const s = next[i] && next[i].event && next[i].event.seq;
+          if (typeof s === 'number' ? !seen[s] : entries.indexOf(next[i]) < 0) {
+            if (typeof s === 'number') seen[s] = true;
+            entries.push(next[i]);
+          }
+        }
+        if (entries.length === before) break;
+        if (!win || win.hasMore !== true) break;
+        await wait(20);
+      }
+      entries.sort(function (a, b) {
+        const sa = (a && a.event && a.event.seq) || 0;
+        const sb = (b && b.event && b.event.seq) || 0;
+        return sa - sb;
+      });
+      return entries;
+    }
+
+    // Fork with the host's own default when our seq cannot be honoured. The
+    // host rejects an atSeq it cannot find (\`session/fork-unavailable\`) and, when
+    // no atSeq is given, falls back to its own latest-completed-turn prefix —
+    // which is still the whole conversation. Losing the branch because the
+    // master happened to be mid-turn is strictly worse than forking a little
+    // earlier, so the last resort drops the explicit seq entirely.
+    async function forkSession(sessions, sourceId, atSeq) {
+      // The remote fork schema accepts only sessionId / atSeq / allowMigration,
+      // and answers in a gateway envelope. An extra key (increaseTitle) makes a
+      // strict schema reject the call outright, and an unwrapped envelope makes
+      // the returned "id" an object, so both are handled here.
+      const attempt = async function (seq) {
+        const params = { sessionId: sourceId };
+        if (typeof seq === 'number') params.atSeq = seq;
+        const raw = await sessions.fork(params);
+        const value = unwrapResult(raw);
+        const id = value && typeof value === 'object' ? value.sessionId || value.id : value;
+        if (!id) throw new Error('fork returned no session id');
+        return String(id);
+      };
+      try {
+        return await attempt(atSeq);
+      } catch (e) {
+        const code = String((e && (e.code || (e.rpcError && e.rpcError.code))) || '');
+        const msg = String((e && e.message) || '');
+        const unusable =
+          code.indexOf('fork-unavailable') >= 0 ||
+          msg.indexOf('fork/unavailable') >= 0 ||
+          msg.indexOf('does not exist in session') >= 0;
+        if (!unusable) throw e;
+        return await attempt(undefined);
+      }
+    }
+
+    // The fork point for "inherit everything" is the master's LAST real
+    // dialogue event, not the last event of any kind and not the end of the
+    // first turn. Everything the master has done so far must travel.
+    //
+    // Taking the maximum seq directly is wrong on any live session: the host
+    // keeps writing housekeeping after the last message (session/title,
+    // request/header, session-log-deepseek delivery), so the max seq sits past
+    // the conversation. A prefix ending there is what the host refuses to
+    // materialise, and the branch opens on an empty history.
+    //
+    // Cut at the LAST real user message instead: assistant messages after it
+    // are a reply to something the user has not said yet, and partial tool
+    // exchanges cannot be replayed. That lands the branch exactly at the point
+    // where the master is waiting for its user, which is also the point where
+    // the user clicks "branch".
+    async function readInheritBoundary(ref) {
+      const entries = await readWholeSession(ref);
+      const binding0 = (ref && ref.binding) || {};
+      const openBoundary = function () {
+        return completedTurnBoundary(
+          eventsOf((ref && ref.eventSource) || binding0.eventSource)
+        );
+      };
+      const real = entries.filter(function (e) {
+        return roleOf(e) && !isSeedUserEntry(e);
+      });
+      const turns = real.filter(function (e) {
+        return roleOf(e) === 'user';
+      }).length;
+      const users = real
+        .filter(function (e) {
+          return roleOf(e) === 'user';
+        })
+        .map(function (e) {
+          return e.event.seq;
+        })
+        .filter(function (s) {
+          return typeof s === 'number';
+        });
+      // Extend to the assistant reply that answers the last user message: it
+      // is part of what the master has already said, and a branch cut before
+      // it loses a whole answer. Mutating stages (step/end, request/header,
+      // delivery) are still excluded.
+      const lastUser = users.length ? users[users.length - 1] : undefined;
+      let atSeq = lastUser;
+      if (typeof lastUser === 'number') {
+        const after = real
+          .filter(function (e) {
+            return roleOf(e) === 'assistant' && typeof e.event.seq === 'number' && e.event.seq > lastUser;
+          })
+          .map(function (e) {
+            return e.event.seq;
+          })
+          .sort(function (a, b) {
+            return a - b;
+          });
+        if (after.length) atSeq = after[after.length - 1];
+      }
+      if (typeof atSeq !== 'number') {
+        // A session that never got one of its own messages: fall back to the
+        // last assistant turn so the branch at least carries its answer.
+        const lasts = real
+          .map(function (e) {
+            return e.event.seq;
+          })
+          .filter(function (s) {
+            return typeof s === 'number';
+          });
+        atSeq = lasts.length ? lasts[lasts.length - 1] : undefined;
+      }
+      // The seq above is the master's last real message and would be the ideal
+      // cut, but the host only materialises a completed-turn prefix: a
+      // mid-turn seq, or one the loaded page never saw, leaves events[atSeq]
+      // undefined and the host either throws session/fork-unavailable or seeds
+      // the branch with nothing. Resolve to the newest completed turn instead
+      // and report the gap honestly.
+      const open = openBoundary();
+      if (typeof open === 'number') {
+        // Nothing newer than the completed turn: the ideal cut is already a
+        // prefix the host will copy, so keep it (that is the fork point the
+        // menu itself uses: the turn's own end).
+        if (open <= atSeq) return { atSeq: atSeq, degraded: false, turns: turns };
+        const live = eventsOf((ref && ref.eventSource) || binding0.eventSource);
+        const pending = live.some(function (ev) {
+          return (
+            ev &&
+            ev.type === 'user/message' &&
+            typeof ev.seq === 'number' &&
+            ev.seq > open &&
+            !isSeedUserEntry({ event: ev })
+          );
+        });
+        return { atSeq: open, degraded: !!pending, turns: turns };
+      }
+      return { atSeq: atSeq, degraded: typeof atSeq !== 'number', turns: turns };
+    }
+
+    // Deterministic fallback digest: used when the model cannot be reached or
+    // does not finish in time, so the branch still gets *something* rather than
+    // silently inheriting raw history.
+    function mechanicalDigest(entries, atSeq) {
+      const picked = [];
+      let chars = 0;
+      for (let i = 0; i < entries.length; i += 1) {
+        const e = entries[i];
+        const ev = e && e.event;
+        if (!ev || typeof ev.seq !== 'number' || ev.seq > atSeq) continue;
+        const role = roleOf(e);
+        if (!role || isSeedUserEntry(e)) continue;
+        const text = messageText(e);
+        if (!text.trim() || isInternalSeed(text)) continue;
+        const turn = turnOf(e);
+        const body = clip(text.trim().replace(/\s+/g, ' '), INHERIT_TURN_CHARS);
+        const line = '【' + (role === 'user' ? '用户' : '助手') + (turn == null ? '' : ' · 轮' + turn) + '】' + body;
+        if (chars + line.length > INHERIT_DIGEST_CHARS) break;
+        picked.push(line);
+        chars += line.length + 1;
+      }
+      return picked.join('\n');
+    }
+
+    function compressionPrompt(sourceTitle, atSeq, turns, transcript) {
+      return [
+        '你在为一个会话分支生成「压缩记忆」。不要调用任何工具，不要写文件，不要继续原任务——只输出摘要正文。',
+        '母会话标题：' + (sourceTitle || '(未命名)'),
+        '分叉点：第 ' + atSeq + ' 个事件（含）；共 ' + turns + ' 轮用户发言。',
+        '',
+        '下面是母会话从开头到分叉点的记录。请把它压缩成一份**可独立续跑**的记忆，用 Markdown 输出，严格按以下小节：',
+        '',
+        '## 任务目标',
+        '用户到底要什么，一句话到三句话。',
+        '',
+        '## 已确认的事实与约束',
+        '用户给的硬约束、偏好、规则、文件命名要求、环境事实（路径、版本、接口名）。逐条列，宁可具体不要笼统。',
+        '',
+        '## 已完成',
+        '已经做成的事，带可验证的结果（改了什么文件、跑出什么数字）。',
+        '',
+        '## 关键决策与理由',
+        '选了什么方案、为什么、否决了哪些方案及原因。',
+        '',
+        '## 未决问题与下一步',
+        '还没解决的、待确认的、下一步该干什么。',
+        '',
+        '## 重要锚点',
+        '文件路径、标识符、命令、错误原文——凡是续跑时要原样用到的，逐条抄下来，不要改写。',
+        '',
+        '要求：只写记录里真有的内容，不要编造；总长控制在 8000 字以内；不要复述过程流水账，只留结论与可复用事实。',
+        '',
+        '===== 母会话记录开始 =====',
+        clip(transcript, INHERIT_PROMPT_CHARS),
+        '===== 母会话记录结束 =====',
+      ].join('\n');
+    }
+
+    function seedText(meta, digest) {
+      return [
+        '<!-- dsh-branch-tree:seed v1 source=' + meta.sourceTitle + ' atSeq=' + meta.atSeq + ' -->',
+        '【' + L('inherited') + '】' + L('inheritFrom') + '「' + (meta.sourceTitle || '') + '」，分叉点 seq=' + meta.atSeq + '。',
+        L('seamNote'),
+        '',
+        digest.trim(),
+        '',
+        '（以上是你的继承记忆。不要复述，不要执行任何任务，只回一句「已就绪」，然后等我说话。）',
+      ].join('\n');
+    }
+
+    // Ask the model to compress the master. This runs in a throwaway session in
+    // the same workspace, never in the master itself: a prompt there would leave
+    // a "summarise yourself" turn inside the user's own conversation, and the
+    // master is supposed to stay exactly as it was. The scratch session is
+    // archived as soon as its answer has been read back.
+    async function compressWithModel(ctx, args) {
+      const mgr = service(ctx, 'sessions');
+      if (!mgr) throw new Error('DSH session service is unavailable');
+      if (!sessionCandidates(ctx).some(function (v) { return typeof v.prompt === 'function'; })) {
+        throw new Error('DSH session prompt API is unavailable');
+      }
+      let raw = '';
+      const ref = mgr.retain(args.sourceId, { source: SOURCE });
+      try {
+        if (ref && ref.ready && typeof ref.ready.then === 'function') {
+          try {
+            await ref.ready;
+          } catch (e) {}
+        }
+        raw = mechanicalDigest(await readWholeSession(ref), args.atSeq);
+      } finally {
+        releaseRef(ref);
+      }
+      const scratchId = await openScratchSession(ctx, args.workspaceId);
+      try {
+        const requestId = 'dshbt-digest-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+        await promptSession(ctx, {
+          requestId: requestId,
+          sessionId: scratchId,
+          mode: 'queue',
+          content: [
+            { type: 'text', text: compressionPrompt(args.sourceTitle, args.atSeq, args.turns, raw) },
+          ],
+        });
+        await waitForTurn(ctx, scratchId, 0, INHERIT_TIMEOUT_MS);
+        const digest = await lastAssistantTextOf(mgr, scratchId);
+        // A short answer is not a digest: the fallback already carries more.
+        if (digest && digest.length >= 100) return { digest: digest, source: 'model' };
+        return { digest: raw, source: 'mechanical' };
+      } finally {
+        archiveQuietly(ctx, scratchId);
+      }
+    }
+
+    // Hands the digest to the new branch as its first message. The remote
+    // prompt surface accepts only 'queue' and 'steer'; 'queue' spends exactly one
+    // turn in the fresh branch, which is what a seed wants: the branch reads its
+    // inherited memory once, answers in one line, and then waits for the user.
+    async function seedChildWithDigest(ctx, childId, meta, digest) {
+      const requestId = 'dshbt-seedchild-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      await promptSession(ctx, {
+        requestId: requestId,
+        sessionId: childId,
+        mode: 'queue',
+        content: [{ type: 'text', text: seedText(meta, digest) }],
+      });
+      return true;
+    }
+
 
     async function makeDirPath(ui, wsPath, relDir) {
       const parts = String(relDir).split('/').filter(Boolean);
@@ -1475,16 +2133,59 @@ window.__ModuleLoader__.load({
       const masterId = o.masterId || fromId;
       const masterTitle = o.masterTitle || (source && source.title) || '';
       const ref = sessions.retain(fromId, { source: SOURCE });
+      // 'inherit' = compress the master into a digest; 'full' (default) = a
+      // verbatim fork; 'opening' = the old turn-1-only cut.
+      const inheritMode = o.inheritMode === 'inherit' ? 'inherit' : o.inheritMode === 'opening' ? 'opening' : 'full';
       let boundary;
+      let digest = '';
+      let digestSource = 'mechanical';
+      let lastCompressError = null;
       try {
-        boundary = await readForkBoundary(ref);
+        boundary =
+          inheritMode === 'opening' ? await readForkBoundary(ref) : await readInheritBoundary(ref);
       } finally {
         releaseRef(ref);
       }
+      const workspaceId = workspaceIdFor(data, fromId);
+      if (inheritMode === 'inherit' && boundary.turns > 0) {
+        try {
+          const made = await compressWithModel(ctx, {
+            sourceId: fromId,
+            sourceTitle: masterTitle,
+            atSeq: boundary.atSeq,
+            turns: boundary.turns,
+            workspaceId: workspaceId,
+          });
+          digest = made.digest;
+          digestSource = made.source;
+        } catch (e) {
+          lastCompressError = (e && e.message) || String(e);
+          const refs = sessions.retain(fromId, { source: SOURCE });
+          try {
+            digest = mechanicalDigest(await readWholeSession(refs), boundary.atSeq);
+          } catch (e2) {
+            digest = '';
+          } finally {
+            releaseRef(refs);
+          }
+          digestSource = 'mechanical';
+        }
+      }
       const masterDir = sanitizeName(masterTitle) || 'master';
-      const relDir = o.parentDir
+      let relDir = o.parentDir
         ? String(o.parentDir) + '/' + title
         : OUTPUT_ROOT + '/' + masterDir + '/' + title;
+      // Branch names are free text, so two siblings can collide; without a
+      // suffix the second branch would silently write into the first dir.
+      const takenDirs = (loadStore().branches || []).map(function (b) {
+        return b && b.dir;
+      });
+      if (takenDirs.indexOf(relDir) >= 0) {
+        const baseDir = relDir;
+        let n = 2;
+        while (takenDirs.indexOf(baseDir + ' (' + n + ')') >= 0) n += 1;
+        relDir = baseDir + ' (' + n + ')';
+      }
       const wsPath =
         workspacePathFor(data, fromId, masterTitle) ||
         workspacePathFor(data, masterId, masterTitle) ||
@@ -1499,29 +2200,52 @@ window.__ModuleLoader__.load({
         }
       }
       let childId;
-      try {
-        childId = await sessions.fork({
-          sessionId: fromId,
-          atSeq: boundary.atSeq,
-          increaseTitle: false,
-        });
-      } catch (e) {
+      // An 'inherit' branch must not see the master's raw history, so it is
+      // started empty and then handed the digest as its entire context. The
+      // empty-fork probe below does not apply to it: empty is the design.
+      const seedOnly = inheritMode === 'inherit' && !!digest;
+      if (seedOnly) {
+        childId = await forkEmptySession(ctx, sessions, fromId, workspaceId);
+      } else {
+        // An empty fork is the one failure the host never reports: it copies a
+        // zero-event prefix and starts "successfully". Probe the child, and if it
+        // came back with nothing inherited, fork again letting the host pick its
+        // own completed-turn boundary.
         try {
-          if (ui && typeof ui.openSession === 'function') await ui.openSession(fromId);
-        } catch (e2) {}
-        await wait(500);
-        const ref2 = sessions.retain(fromId, { source: SOURCE });
-        let atSeq = boundary.atSeq;
-        try {
-          atSeq = (await readForkBoundary(ref2)).atSeq;
-        } catch (e3) {
-        } finally {
+          childId = await forkSession(sessions, fromId, boundary.atSeq);
+          for (let attempt = 0; attempt < EMPTY_FORK_RETRIES; attempt += 1) {
+            const inherited = await inheritedCountOf(sessions, childId, fromId);
+            if (inherited !== 0) break;
+            // There is no delete API on the remote surface; archiving the dud
+            // fork is the closest equivalent and keeps it out of the tree.
+            archiveQuietly(ctx, childId);
+            childId = await forkSession(sessions, fromId, undefined);
+          }
+          emptyFork = (await inheritedCountOf(sessions, childId, fromId)) === 0;
+        } catch (e) {
           try {
-            if (ref2 && typeof ref2.release === 'function') ref2.release();
-          } catch (e4) {}
+            if (ui && typeof ui.openSession === 'function') await ui.openSession(fromId);
+          } catch (e2) {}
+          await wait(500);
+          const ref2 = sessions.retain(fromId, { source: SOURCE });
+          let atSeq = boundary.atSeq;
+          try {
+            atSeq =
+              ((inheritMode === 'opening'
+                ? await readForkBoundary(ref2)
+                : await readInheritBoundary(ref2)) || {}).atSeq;
+            if (typeof atSeq !== 'number') atSeq = boundary.atSeq;
+          } catch (e3) {
+          } finally {
+            try {
+              if (ref2 && typeof ref2.release === 'function') ref2.release();
+            } catch (e4) {}
+          }
+          childId = await forkSession(sessions, fromId, atSeq);
         }
-        childId = await sessions.fork({ sessionId: fromId, atSeq: atSeq, increaseTitle: false });
       }
+      const finalInherited = await inheritedCountOf(sessions, childId, fromId);
+      if (!seedOnly && typeof finalInherited === 'number') emptyFork = finalInherited === 0;
       const childRef = sessions.retain(childId, { source: SOURCE });
       try {
         const face = childRef && childRef.binding && childRef.binding.session;
@@ -1534,6 +2258,18 @@ window.__ModuleLoader__.load({
           if (childRef && typeof childRef.release === 'function') childRef.release();
         } catch (e) {}
       }
+      if (inheritMode === 'inherit' && digest) {
+        try {
+          await seedChildWithDigest(
+            ctx,
+            childId,
+            { sourceTitle: masterTitle, atSeq: boundary.atSeq },
+            digest
+          );
+        } catch (e) {
+          digestSource = 'failed';
+        }
+      }
       const store = loadStore();
       const entry = {
         masterId: masterId,
@@ -1544,8 +2280,15 @@ window.__ModuleLoader__.load({
         dir: relDir,
         seq: boundary.atSeq,
         createdAt: Date.now(),
-        degraded: !!boundary.degraded,
+        degraded: !!boundary.degraded || !!emptyFork,
+        emptyFork: emptyFork || undefined,
         madeDir: madeDir,
+        // 'full' is the default and is left off the record so older entries
+        // (which predate the field) keep meaning "the default behaviour".
+        inheritMode: inheritMode === 'full' ? undefined : inheritMode,
+        digestSource: inheritMode === 'inherit' ? digestSource : undefined,
+        digestChars: inheritMode === 'inherit' ? digest.length : undefined,
+        compressError: inheritMode === 'inherit' ? lastCompressError : undefined,
       };
       const nested = !!(o.parentId && o.parentId !== masterId);
       const masters = nested
@@ -1696,12 +2439,6 @@ window.__ModuleLoader__.load({
       const sNote = useState(null);
       const note = sNote[0];
       const setNote = sNote[1];
-      const sMergeDraft = useState(null);
-      const mergeDraft = sMergeDraft[0];
-      const setMergeDraft = sMergeDraft[1];
-      const sMergeBusy = useState(false);
-      const mergeBusy = sMergeBusy[0];
-      const setMergeBusy = sMergeBusy[1];
       const sWsMenu = useState(false);
       const wsMenu = sWsMenu[0];
       const setWsMenu = sWsMenu[1];
@@ -1751,18 +2488,11 @@ window.__ModuleLoader__.load({
               const batch = sessionIds.slice(i, i + 8);
               const results = await Promise.all(
                 batch.map(function (id) {
-                  return isUnstartedSession(ctx, id).then(async function (blank) {
-                    if (!blank) return null;
-                    const archived = await archiveSession(id);
-                    if (!archived) return id;
-                    const record = data.sessions.get(id) || {};
-                    markArchived(id, {
-                      title: record.title || sessionLabel(id),
-                      dir: '',
-                      group: 'master',
-                      at: Date.now(),
-                    });
-                    return null;
+                  // A blank session is usually a row the user just created and
+                  // has not typed into yet. Archiving it on the host destroys
+                  // it, so blank rows are only hidden in this render pass.
+                  return isUnstartedSession(ctx, id).then(function (blank) {
+                    return blank ? id : null;
                   });
                 })
               );
@@ -1801,11 +2531,26 @@ window.__ModuleLoader__.load({
         },
         [acknowledge, ctx]
       );
+      // Keyed on the shape of the tree, not on the row counts: re-parenting
+      // changes membership without changing any count, and a memo keyed on
+      // .length alone keeps drawing the branch under its old parent.
+      const storeShape =
+        store.branches
+          .map(function (b) {
+            return b.branchId + '>' + b.parentId + ':' + b.name;
+          })
+          .join('|') +
+        '#' +
+        store.masters
+          .map(function (m) {
+            return (m.id || m.masterId) + ':' + m.title;
+          })
+          .join('|');
       const forest = useMemo(
         function () {
           return groupsOf(store);
         },
-        [store.branches.length, store.masters.length]
+        [storeShape]
       );
       const groupById = forest.byId;
       const branchIds = useMemo(
@@ -1816,7 +2561,7 @@ window.__ModuleLoader__.load({
           });
           return s;
         },
-        [store.branches.length]
+        [storeShape]
       );
 
       const toggle = useCallback(function (id) {
@@ -1943,9 +2688,13 @@ window.__ModuleLoader__.load({
             dir: (own && own.dir) || '',
             group: i === 0 ? 'master' : 'child',
           };
-          if (await archiveSession(rowId)) done = true;
-          markArchived(rowId, snap);
-          unstow(rowId);
+          // Only a real host archive earns the mark. Marking a failed one both
+          // hides the row and throws away its store entry, and the store entry is
+          // the only thing an unarchive could have restored.
+          if (await archiveSession(rowId)) {
+            done = true;
+            markArchived(rowId, snap);
+          }
         }
         setNote(done ? L('archived') : L('archiveFailed'));
         emit();
@@ -1955,15 +2704,23 @@ window.__ModuleLoader__.load({
         setMenu(null);
         const ws = service(ctx, 'workspaces');
         const ui = service(ctx, 'uiWorkspace');
+        let ok = false;
         try {
-          if (ws && typeof ws.unarchiveSession === 'function') await ws.unarchiveSession(id);
-          else if (ui && typeof ui.unarchiveSession === 'function') await ui.unarchiveSession(id);
-        } catch (e) {}
-        const ids = loadStore().archived.filter(function (x) {
-          return x === id;
-        });
-        ids.forEach(unmarkArchived);
-        setNote(L('unarchived'));
+          if (ws && typeof ws.unarchiveSession === 'function') {
+            await ws.unarchiveSession(id);
+            ok = true;
+          } else if (ui && typeof ui.unarchiveSession === 'function') {
+            await ui.unarchiveSession(id);
+            ok = true;
+          }
+        } catch (e) {
+          ok = false;
+        }
+        // A failed restore must not clear the local mark: dropping the mark hides
+        // the row from the archived list while the host still has it archived,
+        // which is the worst of both states.
+        if (ok) unmarkArchived(id);
+        setNote(ok ? L('unarchived') : L('archiveFailed'));
         emit();
       }
 
@@ -1986,6 +2743,56 @@ window.__ModuleLoader__.load({
         const s = loadStore();
         if (s.hidden.indexOf(wsId) < 0) patchStore({ hidden: s.hidden.concat([wsId]) });
         setNote(L('wsArchived'));
+        emit();
+      }
+
+      // The host keeps every archived id in one registry-global set, so the
+      // sessions a workspace "lost" are exactly workspace.sessionIds meeting
+      // that set. Restoring them is a per-id host call; there is no bulk API.
+      function archivedIdsOfWorkspace(wsId) {
+        const block = data.workspaces.filter(function (w) {
+          return w.id === wsId;
+        })[0];
+        const ids = block ? block.sessionIds.slice() : [];
+        Object.keys(loadStore().folders).forEach(function (nodeId) {
+          const f = loadStore().folders[nodeId];
+          if (f && f.ws === wsId) ids.push(nodeId);
+        });
+        const out = [];
+        ids.forEach(function (id) {
+          if (hostArchivedIds.has(id) && out.indexOf(id) < 0) out.push(id);
+        });
+        return out;
+      }
+
+      async function runUnarchiveWorkspace(wsId) {
+        setMenu(null);
+        const ws = service(ctx, 'workspaces');
+        const ui = service(ctx, 'uiWorkspace');
+        const ids = archivedIdsOfWorkspace(wsId);
+        let done = 0;
+        for (let i = 0; i < ids.length; i += 1) {
+          const id = ids[i];
+          let ok = false;
+          try {
+            if (ws && typeof ws.unarchiveSession === 'function') {
+              await ws.unarchiveSession(id);
+              ok = true;
+            } else if (ui && typeof ui.unarchiveSession === 'function') {
+              await ui.unarchiveSession(id);
+              ok = true;
+            }
+          } catch (e) {}
+          if (ok) {
+            done += 1;
+            unmarkArchived(id);
+          }
+        }
+        const st = loadStore();
+        if ((st.hidden || []).indexOf(wsId) >= 0) {
+          patchStore({ hidden: st.hidden.filter(function (x) { return x !== wsId; }) });
+        }
+        setNote(done ? L('wsUnarchived') : L('archiveFailed'));
         emit();
       }
 
@@ -2020,7 +2827,22 @@ window.__ModuleLoader__.load({
             current
           );
           setDraft(null);
-          setNote(L('created') + ' · ' + entry.dir + (entry.madeDir ? '' : ' ' + L('dirPending')));
+          // 'full' is the verbatim fork; only the compressed mode has a digest
+          // worth reporting back.
+          const modeTip =
+            entry.inheritMode === 'inherit'
+              ? entry.digestSource === 'failed'
+                ? ' · ' + L('compressFallback')
+                : ' · ' + L('inherited') + ' · ' +
+                  (entry.digestSource === 'mechanical' ? L('digestMechanical') : L('digestModel')) +
+                  ' ' + (entry.digestChars || 0) + L('charsUnit')
+              : entry.inheritMode === 'opening'
+                ? ' · ' + L('modeOpening') + ' · ' + (entry.seq == null ? 'seq?' : 'seq ' + entry.seq)
+                : ' · ' + L('modeFull') + ' · ' + (entry.seq == null ? 'seq?' : 'seq ' + entry.seq);
+          // An empty fork produces a perfectly valid branch row, so say it out
+          // loud instead of letting the user find out on their first question.
+          const emptyTip = entry.emptyFork ? ' · ' + L('emptyFork') : '';
+          setNote(L('created') + ' · ' + entry.dir + modeTip + emptyTip + (entry.madeDir ? '' : ' ' + L('dirPending')));
           setCollapsed(function (prev) {
             return prev.filter(function (x) {
               return x !== current.parentId && x !== current.masterId;
@@ -2087,9 +2909,22 @@ window.__ModuleLoader__.load({
             masterTitle: n.masterTitle || title,
             parentDir: n.dir || null,
             value: '',
+            inheritMode: 'full',
           };
         }
-        return { id: id, parentId: id, masterId: id, masterTitle: title, parentDir: null, value: '' };
+        // Default mode: a verbatim fork of everything the master has done so
+        // far. Compression stays available as an explicit choice — it is a
+        // lossy shortcut, and losing the details (a rejected approach, a spec
+        // the user spelled out once) is exactly what makes a branch useless.
+        return {
+          id: id,
+          parentId: id,
+          masterId: id,
+          masterTitle: title,
+          parentDir: null,
+          value: '',
+          inheritMode: 'full',
+        };
       }
 
       function applyNest(srcId, targetId, silent) {
@@ -2104,69 +2939,10 @@ window.__ModuleLoader__.load({
         return true;
       }
 
-      function requestMerge(srcId, targetId) {
-        if (!canNest(store, srcId, targetId)) {
-          setNote(L('nestBlocked'));
-          return;
-        }
-        const source = data.sessions.get(srcId) || {};
-        const target = data.sessions.get(targetId) || {};
-        setMergeDraft({
-          sourceId: srcId,
-          targetId: targetId,
-          sourceTitle: titles[srcId] || source.title || srcId,
-          targetTitle: titles[targetId] || target.title || targetId,
-        });
-        setNote(null);
-      }
-
-      async function runMerge(mode) {
-        if (!mergeDraft || mergeBusy) return;
-        const current = mergeDraft;
-        setMergeBusy(true);
-        setNote(L('mergeRunning'));
-        try {
-          const sourceWorkspace = workspacePathFor(data, current.sourceId, current.sourceTitle);
-          const targetWorkspace = workspacePathFor(data, current.targetId, current.targetTitle);
-          const normalizedSource = String(sourceWorkspace || '').replace(/[\\/]+$/, '');
-          const normalizedTarget = String(targetWorkspace || '').replace(/[\\/]+$/, '');
-          if (!normalizedSource || normalizedSource !== normalizedTarget) {
-            throw new Error(L('mergeDifferentWorkspace'));
-          }
-          const sourceDir = markdownDirFor(store, current.sourceId, normalizedSource);
-          const targetDir = markdownDirFor(store, current.targetId, normalizedTarget);
-          if (sourceDir.replace(/[\\/]+$/, '') === targetDir.replace(/[\\/]+$/, '')) {
-            throw new Error(L('mergeSameFolder'));
-          }
-          const outputPath = await availableMergeOutputPath(
-            ctx, current.sourceId, sourceDir, current.sourceTitle, current.targetTitle
-          );
-          const result = await mergeMarkdownWithModel(ctx, {
-            mode: mode,
-            sourceId: current.sourceId,
-            sourceTitle: current.sourceTitle,
-            sourceDir: sourceDir,
-            targetTitle: current.targetTitle,
-            targetDir: targetDir,
-            outputPath: outputPath,
-          });
-          if (mode === 'branch' && !applyNest(current.sourceId, current.targetId, true)) {
-            throw new Error(L('nestBlocked'));
-          }
-          setNote(L('mergeDone') + ' · ' + result.path);
-          setMergeDraft(null);
-        } catch (e) {
-          setNote(L('mergeFailed') + ': ' + String((e && e.message) || e));
-          setMergeDraft(null);
-        } finally {
-          setMergeBusy(false);
-        }
-      }
-
       async function renameWorkspace(ws) {
         const svc = service(ctx, 'workspaces');
         if (!svc || typeof svc.rename !== 'function') {
-          setNote('工作区重命名服务不可用');
+          setNote(L('wsRenameUnavailable'));
           return;
         }
         let title;
@@ -2180,9 +2956,9 @@ window.__ModuleLoader__.load({
         if (!title || title === ws.title) return;
         try {
           await svc.rename(ws.id, title);
-          setNote('工作区已重命名');
+          setNote(L('wsRenamed'));
         } catch (e) {
-          setNote('重命名失败：' + String((e && e.message) || e));
+          setNote(L('wsRenameFailed') + String((e && e.message) || e));
         }
       }
 
@@ -2232,7 +3008,10 @@ window.__ModuleLoader__.load({
             const src = drag || (e && e.dataTransfer && e.dataTransfer.getData('text/plain'));
             setDrop(null);
             setDrag(null);
-            if (src) requestMerge(String(src), id);
+            if (!src) return;
+            // Plain drops intentionally do nothing; Alt-drag is the explicit
+            // gesture for changing the session tree.
+            if (e && e.altKey) applyNest(String(src), id, false);
           },
         };
       }
@@ -2435,7 +3214,8 @@ window.__ModuleLoader__.load({
               setDrop(null);
               setDrag(null);
               dragSrc = null;
-              if (src) requestMerge(String(src), id);
+              if (!src) return;
+              if (e && e.altKey) applyNest(String(src), id, false);
             },
             onClick: function (e) {
               if (e && e.target && e.target.closest && e.target.closest('button')) return;
@@ -2542,6 +3322,18 @@ window.__ModuleLoader__.load({
 
       function renderDraft(nodeId) {
         if (!draft || draft.parentId !== nodeId) return null;
+        const mode =
+          draft.inheritMode === 'opening'
+            ? 'opening'
+            : draft.inheritMode === 'inherit'
+              ? 'inherit'
+              : 'full';
+        const pick = function (next) {
+          return function (e) {
+            e.stopPropagation();
+            setDraft(Object.assign({}, draft, { inheritMode: next }));
+          };
+        };
         return h(
           'div',
           { className: 'dshbt-draft', key: 'draft-' + nodeId },
@@ -2563,8 +3355,47 @@ window.__ModuleLoader__.load({
           }),
           h(
             'div',
+            { className: 'dshbt-modes', title: L('modeLabel') },
+            h('span', { className: 'dshbt-modes-label' }, L('modeLabel')),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dshbt-mode' + (mode === 'full' ? ' is-on' : ''),
+                title: L('modeFullHint'),
+                onClick: pick('full'),
+              },
+              L('modeFull')
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dshbt-mode' + (mode === 'inherit' ? ' is-on' : ''),
+                title: L('modeInheritHint'),
+                onClick: pick('inherit'),
+              },
+              L('modeInherit')
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'dshbt-mode' + (mode === 'opening' ? ' is-on' : ''),
+                title: L('modeOpeningHint'),
+                onClick: pick('opening'),
+              },
+              L('modeOpening')
+            )
+          ),
+          h(
+            'div',
             { className: 'dshbt-draft-btns' },
-            h(Btn, { primary: true, small: true, disabled: busy, onClick: submitDraft }, busy ? L('creating') : L('create')),
+            h(
+              Btn,
+              { primary: true, small: true, disabled: busy, onClick: submitDraft },
+              busy ? (mode === 'inherit' ? L('compressing') : L('creating')) : L('create')
+            ),
             h(
               Btn,
               {
@@ -2635,12 +3466,20 @@ window.__ModuleLoader__.load({
       const hostArchivedIds = useMemo(
         function () {
           const set = new Set();
+          // data.archivedIds is the host's registry-global archive set, mirrored
+          // by extractSnapshot. data.sessions alone is not enough: a session the
+          // host hid keeps its record in the sessions snapshot without the flag.
+          if (data.archivedIds && typeof data.archivedIds.forEach === 'function') {
+            data.archivedIds.forEach(function (id) {
+              set.add(id);
+            });
+          }
           data.sessions.forEach(function (v) {
             if (v && v.archived) set.add(v.id);
           });
           return set;
         },
-        [data.sessions]
+        [data.sessions, data.archivedIds]
       );
       const hiddenArchived = function (id) {
         return isArchived(id) || hostArchivedIds.has(id);
@@ -2863,7 +3702,23 @@ window.__ModuleLoader__.load({
                             },
                           },
                           L('archiveWs')
-                        )
+                        ),
+                        archivedIdsOfWorkspace(ws.id).length
+                          ? h(
+                              'button',
+                              {
+                                type: 'button',
+                                className: 'dshbt-menu-item',
+                                onClick: function () {
+                                  setWsActionMenu(null);
+                                  if (window.confirm(L('unarchiveWsConfirm') + '\n' + ws.title)) {
+                                    runUnarchiveWorkspace(ws.id);
+                                  }
+                                },
+                              },
+                              L('unarchiveWs') + ' (' + archivedIdsOfWorkspace(ws.id).length + ')'
+                            )
+                          : null
                       )
                     : null
                 )
@@ -2946,7 +3801,7 @@ window.__ModuleLoader__.load({
                 setWsMenu(!wsMenu);
               },
             },
-            h('span', { className: 'dshbt-ws-name' }, '全部对话'),
+            h('span', { className: 'dshbt-ws-name' }, L('allChats')),
             I('caret', 12)
           ),
           h(IconBtn, { name: 'plus', title: L('newSession'), onClick: newSession }),
@@ -3018,22 +3873,13 @@ window.__ModuleLoader__.load({
                       h('span', { className: 'dshbt-cascade-label' }, ws.title),
                       I('caret', 12)
                     ),
-                    h(IconBtn, {
-                      name: 'edit',
-                      title: L('rename'),
-                      onClick: function () {
-                        setWsMenu(false);
-                        setCascadeOpen([]);
-                        renameWorkspace(ws);
-                      },
-                    }),
                     wsOpen
                       ? h(
                           'div',
                           { className: 'dshbt-cascade-submenu', role: 'menu' },
                           rootIds.length
                             ? rootIds.map(function (id) { return cascadeSessionNode(id, wsPath); })
-                            : h('div', { className: 'dshbt-cascade-empty' }, '暂无对话')
+                            : h('div', { className: 'dshbt-cascade-empty' }, L('noChats'))
                         )
                       : null
                   );
@@ -3110,67 +3956,6 @@ window.__ModuleLoader__.load({
             h('span', { className: 'dshbt-ver' }, VERSION)
           )
         ),
-        mergeDraft
-          ? h(
-              'div',
-              {
-                className: 'dshbt-merge-overlay',
-                onClick: function () { if (!mergeBusy) setMergeDraft(null); },
-              },
-              h(
-                'div',
-                {
-                  className: 'dshbt-merge-dialog',
-                  role: 'dialog',
-                  'aria-modal': true,
-                  'aria-label': L('mergeTitle'),
-                  onClick: function (e) { e.stopPropagation(); },
-                },
-                h(
-                  'div',
-                  { className: 'dshbt-merge-head' },
-                  h('strong', null, L('mergeTitle')),
-                  h('button', {
-                    type: 'button',
-                    className: 'dshbt-merge-close',
-                    disabled: mergeBusy,
-                    title: L('cancel'),
-                    onClick: function () { setMergeDraft(null); },
-                  }, '×')
-                ),
-                h('div', { className: 'dshbt-merge-intro' }, L('mergeIntro')),
-                h(
-                  'div',
-                  { className: 'dshbt-merge-pair' },
-                  h('div', null, h('b', null, L('mergeSource')), h('span', null, mergeDraft.sourceTitle)),
-                  h('div', null, h('b', null, L('mergeTarget')), h('span', null, mergeDraft.targetTitle))
-                ),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'dshbt-merge-choice',
-                    disabled: mergeBusy,
-                    onClick: function () { runMerge('same'); },
-                  },
-                  h('strong', null, L('mergeSameTask')),
-                  h('span', null, L('mergeSameHint'))
-                ),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'dshbt-merge-choice dshbt-merge-choice-branch',
-                    disabled: mergeBusy,
-                    onClick: function () { runMerge('branch'); },
-                  },
-                  h('strong', null, L('mergeAsBranch')),
-                  h('span', null, L('mergeBranchHint'))
-                ),
-                mergeBusy ? h('div', { className: 'dshbt-merge-progress', role: 'status' }, L('mergeRunning')) : null
-              )
-            )
-          : null
       );
     }
 
@@ -3180,7 +3965,7 @@ window.__ModuleLoader__.load({
     // because shadowing the shipped seat removes the native list for good.
     // Always render something, and if rendering throws show the reason instead
     // of an empty void.
-    const VERSION = 'v45';
+    const VERSION = 'v52';
 
     class SlotBoundary extends React.Component {
       constructor(props) {
@@ -3403,7 +4188,6 @@ window.__ModuleLoader__.load({
       '.dshbt-cascade-entry{position:relative;}',
       '.dshbt-cascade-workspace-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px;}',
       '.dshbt-cascade-workspace-entry>.dshbt-cascade-trigger{grid-column:1;grid-row:1;min-width:0;}',
-      '.dshbt-cascade-workspace-entry>.dshbt-icon-btn{grid-column:2;grid-row:1;}',
       '.dshbt-cascade-workspace-entry>.dshbt-cascade-submenu{grid-column:1 / -1;}',
       '.dshbt-menu-item.dshbt-cascade-trigger{display:flex;align-items:center;gap:8px;min-height:30px;box-sizing:border-box;}',
       '.dshbt-cascade-trigger:focus-visible{outline:2px solid ' + BRAND + ';outline-offset:-2px;}',
@@ -3420,6 +4204,11 @@ window.__ModuleLoader__.load({
       '.dshbt-input:focus{border-color:' + BRAND + ';}',
       '.dshbt-input.dshbt-inline{height:24px;padding:0 6px;flex:1;}',
       '.dshbt-draft-btns{display:flex;gap:6px;margin-top:6px;justify-content:flex-end;}',
+      '.dshbt-modes{display:flex;align-items:center;gap:3px;margin-top:6px;flex-wrap:nowrap;overflow:hidden;}',
+      '.dshbt-modes-label{flex:none;font-size:9.5px;opacity:.58;margin-right:1px;white-space:nowrap;}',
+      '.dshbt-mode{flex:none;height:17px;padding:0 4px;border:1px solid ' + BORDER_2 + ';border-radius:5px;background:' + LAYER_1 + ';color:' + COLOR + ';font:inherit;font-size:9.5px;line-height:15px;white-space:nowrap;cursor:pointer;opacity:.78;}',
+      '.dshbt-mode:hover{background:' + LAYER_2 + ';opacity:1;}',
+      '.dshbt-mode.is-on{border-color:' + BRAND + ';color:' + BRAND + ';background:' + LAYER_2 + ';opacity:1;font-weight:600;}',
       '.dshbt-btn{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 12px;border:1px solid ' + BORDER_2 + ';border-radius:8px;background:' + LAYER_1 + ';color:' + COLOR + ';font:inherit;font-size:12.5px;cursor:pointer;}',
       '.dshbt-btn:hover{background:' + LAYER_2 + ';}',
       '.dshbt-btn-sm{height:24px;padding:0 9px;font-size:12px;}',
@@ -3436,21 +4225,6 @@ window.__ModuleLoader__.load({
       '.dshbt-foot{padding:6px 8px 8px;border-top:1px solid ' + BORDER + ';}',
       '.dshbt-foot-btn{display:flex;align-items:center;gap:6px;width:100%;height:30px;padding:0 8px;border:0;border-radius:7px;background:none;color:' + MUTED + ';font:inherit;font-size:12.5px;cursor:pointer;}',
       '.dshbt-foot-btn:hover{background:' + HOVER + ';color:' + COLOR + ';}',
-      '.dshbt-merge-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.42);}',
-      '.dshbt-merge-dialog{box-sizing:border-box;width:min(440px,100%);padding:16px;border:1px solid ' + BORDER + ';border-radius:12px;background:' + LAYER_1 + ';color:' + COLOR + ';box-shadow:0 18px 54px rgba(0,0,0,.28);}',
-      '.dshbt-merge-head{display:flex;align-items:center;justify-content:space-between;font-size:14px;}',
-      '.dshbt-merge-close{border:0;background:transparent;color:' + MUTED + ';font-size:20px;line-height:1;cursor:pointer;}',
-      '.dshbt-merge-intro{margin:8px 0 12px;color:' + MUTED + ';font-size:11.5px;line-height:1.5;}',
-      '.dshbt-merge-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}',
-      '.dshbt-merge-pair>div{min-width:0;padding:8px;border-radius:8px;background:' + LAYER_2 + ';font-size:11px;}',
-      '.dshbt-merge-pair b,.dshbt-merge-pair span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
-      '.dshbt-merge-pair b{margin-bottom:3px;color:' + MUTED + ';font-weight:600;}',
-      '.dshbt-merge-choice{display:flex;flex-direction:column;gap:4px;width:100%;margin-top:8px;padding:10px 11px;border:1px solid ' + BORDER + ';border-radius:9px;background:transparent;color:' + COLOR + ';text-align:left;font:inherit;cursor:pointer;}',
-      '.dshbt-merge-choice:hover{border-color:' + BRAND + ';background:' + HOVER + ';}',
-      '.dshbt-merge-choice:disabled,.dshbt-merge-close:disabled{opacity:.5;cursor:default;}',
-      '.dshbt-merge-choice strong{font-size:12px;}',
-      '.dshbt-merge-choice span{color:' + MUTED + ';font-size:11px;line-height:1.4;}',
-      '.dshbt-merge-progress{margin-top:10px;color:' + BRAND + ';font-size:11.5px;}',
       '.dshbt-ver{margin-left:auto;font-size:10px;opacity:.45;}',
       '.dshbt-narrow .dshbt-wsbar,.dshbt-narrow .dshbt-searchrow,.dshbt-narrow .dshbt-foot{display:none;}',
       '.dshbt-panel{display:flex;flex-direction:column;height:100%;min-height:0;background:' + LAYER_1 + ';color:' + COLOR + ';}',
@@ -3522,7 +4296,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots'],
+      inject: ['slots', 'remote', 'remote.session', 'remote.workspaceFiles'],
       apply(ctx) {
         ctxRef.ref = ctx;
         insertStyles(CSS);
@@ -3575,11 +4349,6 @@ window.__ModuleLoader__.load({
         nestUnder: nestUnder,
         detachEntry: detachEntry,
         canNest: canNest,
-        localVersionDate: localVersionDate,
-        mergeOutputPath: mergeOutputPath,
-        markdownDirFor: markdownDirFor,
-        availableMergeOutputPath: availableMergeOutputPath,
-        mergeMarkdownWithModel: mergeMarkdownWithModel,
         folderOf: folderOf,
         setFolder: setFolder,
         childDir: childDir,
@@ -3596,6 +4365,18 @@ window.__ModuleLoader__.load({
         resetStore: resetStore,
         unstow: unstow,
         readForkBoundary: readForkBoundary,
+        readInheritBoundary: readInheritBoundary,
+        completedTurnBoundary: completedTurnBoundary,
+        forkSession: forkSession,
+        isSeedUserEntry: isSeedUserEntry,
+        seedBlockHeaders: SEED_BLOCK_HEADERS,
+        createBranch: createBranch,
+
+        mechanicalDigest: mechanicalDigest,
+        compressionPrompt: compressionPrompt,
+        seedText: seedText,
+        clip: clip,
+        messageText: messageText,
         hookKey: hookKey,
         version: VERSION,
         browser: WorkspaceBrowser,

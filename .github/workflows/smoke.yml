@@ -1,0 +1,39 @@
+name: smoke
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Everything the plugin does lives in client.js; the host half is an empty
+      # apply(). There is no build step and no npm dependency to install.
+      - name: Syntax check
+        run: node --check client.js
+
+      - name: Smoke test
+        run: node test/smoke.mjs
+
+      - name: Release consistency
+        run: node scripts/check-release.mjs
+
+      - name: Package contents (no AppleDouble, expected files)
+        run: |
+          set -e
+          test -f package.json
+          test -f client.js
+          test -f cordis.patch.yml
+          test -f locale/zh.json
+          test -f locale/en.json
+          test -f index.js
+          ! find . -name '._*' -not -path './.git/*' | grep .
